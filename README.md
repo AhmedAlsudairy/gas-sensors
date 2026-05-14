@@ -75,18 +75,54 @@ Raspberry Pi  (same room as Arduino)
 
 ---
 
-## Part 1 — Neon database
+## Part 1 — Neon database setup and connection string
 
-1. Log in to https://console.neon.tech
-2. Click **New Project** → give it a name (e.g. `gas-sensors`) → **Create**
-3. On the project page click **Connection Details**
-4. Copy the connection string — it looks like:
-   ```
-   postgresql://ahmed:AbCdEf@ep-cool-fog-123456.us-east-2.aws.neon.tech/neondb?sslmode=require
-   ```
-   Save this — you will need it in Part 2 and Part 3.
+### 1-a  Create a free account
 
-> The database tables are created automatically the first time the Pi posts data. No SQL to run manually.
+1. Go to https://console.neon.tech
+2. Click **Sign Up** (top-right corner)
+3. Choose **Continue with GitHub** (or use email + password)
+4. After sign-in you land on the Neon Console home
+
+### 1-b  Create a project and database
+
+1. Click the **New Project** button (top-right)
+2. Fill in:
+   - **Project name**: `gas-sensors` (or any name)
+   - **Postgres version**: leave as default (16)
+   - **Region**: pick the region closest to your Raspberry Pi (e.g. `AWS / us-east-2`)
+3. Click **Create Project**
+4. Neon auto-creates a database named `neondb` and a role named after your account
+
+### 1-c  Get the connection string (your DATABASE_URL)
+
+1. You are now on the project dashboard — click **Connection Details** (left sidebar, or the card at top)
+2. In the **Connection string** tab, make sure the dropdown shows:
+   - **Role**: your username (e.g. `ahmed`)
+   - **Database**: `neondb`
+   - **Branch**: `main`
+3. Click the **copy icon** next to the connection string. It looks like:
+   ```
+   postgresql://ahmed:AbCdEf123@ep-cool-fog-123456.us-east-2.aws.neon.tech/neondb?sslmode=require
+   ```
+   This is your **`DATABASE_URL`**. Save it somewhere — you need it in Part 2 and Part 3.
+
+> **What each part means:**
+> ```
+> postgresql://  USERNAME  :  PASSWORD  @  HOST  /  DATABASE  ?sslmode=require
+>               ──────────   ─────────    ──────    ────────
+>               ahmed         AbCdEf123   ep-cool-fog-123456...   neondb
+> ```
+
+### 1-d  Verify the connection (optional but recommended)
+
+If you have `psql` installed locally, paste this to confirm it works:
+```bash
+psql "postgresql://ahmed:AbCdEf123@ep-cool-fog-123456.us-east-2.aws.neon.tech/neondb?sslmode=require" -c "SELECT version();"
+```
+You should see a Postgres version line. If you get a connection error, double-check the password in the Neon console under **Settings → Roles**.
+
+> **Tables are created automatically** — the first time the Pi posts data, the app creates the `sensor_readings` and `relay_events` tables. No SQL to run manually.
 
 ---
 
