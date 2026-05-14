@@ -1,0 +1,6 @@
+{
+  "functions": {
+    "app/api/ingest/route.ts": { "maxDuration": 30 },
+    "app/api/readings/route.ts": { "maxDuration": 30 }
+  }
+}

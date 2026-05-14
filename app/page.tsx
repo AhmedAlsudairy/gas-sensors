@@ -1,6 +1,6 @@
 ﻿"use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import dynamic from "next/dynamic";
 
 // Load gauge with no SSR (Three.js requires browser APIs)
@@ -241,6 +241,8 @@ function SensorCard({ sensor, reading, dark }: { sensor: SensorConfig; reading: 
 // ── Page ───────────────────────────────────────────────────────────────────────
 export default function Home() {
   const [dark, setDark] = useState(true);
+  const [isLive, setIsLive] = useState(false);
+  const [lastSeen, setLastSeen] = useState<string | null>(null);
   const [readings, setReadings] = useState<Record<string, SensorReading>>(() =>
     Object.fromEntries(
       SENSORS.map((s) => {
@@ -250,9 +252,72 @@ export default function Home() {
     )
   );
   const [tick, setTick] = useState(0);
+  const simRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
+  // ── SSE — connect to real sensor stream ──────────────────────────────────────
   useEffect(() => {
-    const id = setInterval(() => {
+    let es: EventSource | null = null;
+    let reconnect: ReturnType<typeof setTimeout>;
+
+    const connect = () => {
+      es = new EventSource("/api/sse");
+
+      es.addEventListener("message", (e) => {
+        try {
+          const msg = JSON.parse(e.data) as {
+            type: string;
+            data: Record<string, { ppm: number; status: string; recorded_at: string }>;
+          };
+          if (msg.type !== "readings") return;
+          const hasData = Object.keys(msg.data).length > 0;
+          if (!hasData) return;
+
+          setIsLive(true);
+          setLastSeen(new Date().toLocaleTimeString());
+
+          setReadings((prev) => {
+            const next = { ...prev };
+            for (const sensor of SENSORS) {
+              const incoming = msg.data[sensor.id];
+              if (!incoming) continue;
+              const old = prev[sensor.id];
+              next[sensor.id] = {
+                ppm: incoming.ppm,
+                history: [...old.history.slice(-19), incoming.ppm],
+              };
+            }
+            return next;
+          });
+          setTick((t) => t + 1);
+        } catch {
+          // malformed event — ignore
+        }
+      });
+
+      es.onerror = () => {
+        setIsLive(false);
+        es?.close();
+        // Try to reconnect after 5 s
+        reconnect = setTimeout(connect, 5000);
+      };
+    };
+
+    connect();
+    return () => {
+      es?.close();
+      clearTimeout(reconnect);
+    };
+  }, []);
+
+  // ── Simulation fallback — only runs when no real data is coming ───────────────
+  useEffect(() => {
+    if (isLive) {
+      // Real data active — stop simulation
+      if (simRef.current) clearInterval(simRef.current);
+      simRef.current = null;
+      return;
+    }
+    simRef.current = setInterval(() => {
       setReadings((prev) => {
         const next = { ...prev };
         SENSORS.forEach((s) => {
@@ -265,8 +330,10 @@ export default function Home() {
       });
       setTick((t) => t + 1);
     }, 1500);
-    return () => clearInterval(id);
-  }, []);
+    return () => {
+      if (simRef.current) clearInterval(simRef.current);
+    };
+  }, [isLive]);
 
   const anyDanger = SENSORS.some((s) => getStatus(readings[s.id].ppm, s) === "danger");
   const anyWarn = SENSORS.some((s) => getStatus(readings[s.id].ppm, s) === "warning");
@@ -345,6 +412,18 @@ export default function Home() {
             <span className="hidden sm:inline">{anyDanger ? "⚠ DANGER ALERT" : anyWarn ? "⚠ WARNING" : "✓ ALL CLEAR"}</span>
           </span>
 
+          {/* Live / Simulated badge */}
+          <span
+            className="hidden sm:flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[10px] font-bold"
+            style={{
+              background: isLive ? "#22c55e18" : "#94a3b818",
+              color: isLive ? "#22c55e" : "#94a3b8",
+              border: `1px solid ${isLive ? "#22c55e44" : "#94a3b844"}`,
+            }}
+          >
+            <span className="h-1.5 w-1.5 rounded-full" style={{ background: isLive ? "#22c55e" : "#94a3b8" }} />
+            {isLive ? `LIVE ${lastSeen ?? ""}` : "SIMULATED"}
+          </span>
           {/* Tick */}
           <span className="hidden sm:inline text-xs tabular-nums" style={{ color: dark ? "#334155" : "#cbd5e1" }}>
             #{tick}
@@ -480,7 +559,8 @@ export default function Home() {
       </main>
 
       <footer className="mt-8 pb-6 text-center text-[11px]" style={{ color: dark ? "#1e293b" : "#cbd5e1" }}>
-        Gas Sensor Monitor — MQ-2 · MQ-136 · MQ-7 — Simulated live data
+        Gas Sensor Monitor — MQ-2 · MQ-136 · MQ-7 —{" "}
+        {isLive ? `Live data · last update ${lastSeen ?? ""}` : "Simulated data (no hardware connected)"}
       </footer>
     </div>
   );

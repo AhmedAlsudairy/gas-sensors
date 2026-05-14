@@ -1,0 +1,18 @@
+[Unit]
+Description=Gas Sensor Raspberry Pi Agent
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=pi
+WorkingDirectory=/home/pi/gas-sensor/hardware/raspberry-pi
+ExecStart=/home/pi/gas-sensor/hardware/raspberry-pi/venv/bin/python agent.py
+EnvironmentFile=/home/pi/gas-sensor/.env
+Restart=always
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
