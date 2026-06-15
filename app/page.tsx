@@ -415,8 +415,11 @@ export default function Home() {
   const [histories, setHistories] = useState<Record<string, HistoryRow[]>>({});
   const [relay1, setRelay1] = useState<boolean | null>(null);
   const [relay2, setRelay2] = useState<boolean | null>(null);
+  const [alarmActive, setAlarmActive] = useState(false);
   const [relayReason, setRelayReason] = useState<string | null>(null);
   const relayMode = relay1 === null && relay2 === null ? "auto" : "manual";
+  const actualR1 = relay1 !== null ? relay1 : alarmActive;
+  const actualR2 = relay2 !== null ? relay2 : alarmActive;
   const [tick, setTick] = useState(0);
   const [thresholds, setThresholds] = useState<Record<string, { warn: number; danger: number }>>(() =>
     Object.fromEntries(SENSORS.map((s) => [s.id, { ...s.thresholds }]))
@@ -520,6 +523,7 @@ export default function Home() {
           });
 
           if (msg.relay) {
+            setAlarmActive(msg.relay.active);
             setRelayReason(msg.relay.reason ?? null);
           }
           setTick((t) => t + 1);
@@ -641,51 +645,56 @@ export default function Home() {
             }}
             className="flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[10px] font-bold transition-all hover:scale-105 active:scale-95"
             style={{
-              background: relayMode === "manual" ? "#ef444418" : "#22c55e18",
-              color: relayMode === "manual" ? "#ef4444" : "#22c55e",
-              border: `1px solid ${relayMode === "manual" ? "#ef444444" : "#22c55e44"}`,
-              boxShadow: relayMode === "manual" ? "0 0 12px #ef444444" : "none",
+              background: actualR1 || actualR2 ? "#ef444418" : "#22c55e18",
+              color: actualR1 || actualR2 ? "#ef4444" : "#22c55e",
+              border: `1px solid ${actualR1 || actualR2 ? "#ef444444" : "#22c55e44"}`,
+              boxShadow: actualR1 || actualR2 ? "0 0 12px #ef444444" : "none",
             }}
-            title={relayMode === "auto" ? "AUTO — click to force both relays ON" : "MANUAL — click to return to AUTO"}
+            title={relayMode === "auto" ? "AUTO — relays follow alarm" : "MANUAL — click to return to AUTO"}
           >
             <span
-              className={`h-1.5 w-1.5 rounded-full ${relayMode === "manual" ? "animate-pulse" : ""}`}
-              style={{ background: relayMode === "manual" ? "#ef4444" : "#22c55e" }}
+              className={`h-1.5 w-1.5 rounded-full ${actualR1 || actualR2 ? "animate-pulse" : ""}`}
+              style={{ background: actualR1 || actualR2 ? "#ef4444" : "#22c55e" }}
             />
             {relayMode === "auto" ? "AUTO" : "MANUAL"}
+            {(actualR1 || actualR2) && relayReason && (
+              <span className="ml-1 text-[9px] opacity-70 max-w-[120px] truncate">{relayReason}</span>
+            )}
           </button>
 
           {([1, 2] as const).map((n) => {
-            const val = n === 1 ? relay1 : relay2;
-            const setVal = n === 1 ? setRelay1 : setRelay2;
-            const on = val === true;
-            const auto = val === null;
+            const manual = n === 1 ? relay1 : relay2;
+            const setManual = n === 1 ? setRelay1 : setRelay2;
+            const actual = n === 1 ? actualR1 : actualR2;
             return (
               <button
                 key={n}
                 onClick={async () => {
                   const key = `relay${n}` as "relay1" | "relay2";
-                  const next = auto ? true : null; // ON ↔ AUTO
+                  const next = manual === true ? null : true; // ON ↔ AUTO (toggle manual override)
                   try {
                     await fetch("/api/relay", {
                       method: "POST",
                       headers: { "Content-Type": "application/json" },
                       body: JSON.stringify({ [key]: next }),
                     });
-                    setVal(next);
+                    setManual(next);
                   } catch {}
                 }}
                 className="flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[10px] font-bold transition-all hover:scale-105 active:scale-95"
                 style={{
-                  background: on ? "#ef444418" : auto ? "#22c55e18" : "#94a3b818",
-                  color: on ? "#ef4444" : auto ? "#22c55e" : "#94a3b8",
-                  border: `1px solid ${on ? "#ef444444" : auto ? "#22c55e44" : "#94a3b844"}`,
-                  boxShadow: on ? "0 0 12px #ef444444" : "none",
+                  background: actual ? "#ef444418" : "#22c55e18",
+                  color: actual ? "#ef4444" : "#22c55e",
+                  border: `1px solid ${actual ? "#ef444444" : "#22c55e44"}`,
+                  boxShadow: actual ? "0 0 12px #ef444444" : "none",
                 }}
-                title={on ? `Relay ${n} ON — click for AUTO` : auto ? `Relay ${n} AUTO — click for ON` : `Relay ${n} OFF`}
+                title={actual ? `Relay ${n} ON${manual !== null ? " (manual)" : " (alarm)"} — click to toggle` : `Relay ${n} OFF — click for ON`}
               >
-                <span className="h-1.5 w-1.5 rounded-full" style={{ background: on ? "#ef4444" : auto ? "#22c55e" : "#94a3b8" }} />
-                R{n} {on ? "ON" : auto ? "AUTO" : "OFF"}
+                <span className={`h-1.5 w-1.5 rounded-full ${actual ? "animate-pulse" : ""}`} style={{ background: actual ? "#ef4444" : "#22c55e" }} />
+                R{n} {actual ? "ON" : "OFF"}
+                {manual === null && !actual && <span className="ml-0.5 opacity-50">A</span>}
+                {manual === null && actual && <span className="ml-0.5 opacity-50">A</span>}
+                {manual !== null && <span className="ml-0.5 opacity-50">M</span>}
               </button>
             );
           })}
@@ -844,11 +853,11 @@ export default function Home() {
       <footer className="mt-8 pb-6 text-center text-[11px]" style={{ color: dark ? "#1e293b" : "#cbd5e1" }}>
         Gas Sensor Monitor &mdash; MQ-2 &middot; MQ-136 &middot; MQ-7 &middot; Water Level &middot; DS18B20 &mdash;{" "}
         {isLive ? `Live data \u00b7 last update ${lastSeen ?? ""}` : "Waiting for sensor data..."}
-        {relayMode === "manual" && (
-          <span className="ml-2 font-bold" style={{ color: "#ef4444" }}>
-            &#9888; MANUAL &middot; R1: {relay1 === true ? "ON" : relay1 === false ? "OFF" : "AUTO"} &middot; R2: {relay2 === true ? "ON" : relay2 === false ? "OFF" : "AUTO"}
-          </span>
-        )}
+        <span className="ml-2" style={{ color: actualR1 || actualR2 ? "#ef4444" : dark ? "#1e293b" : "#cbd5e1" }}>
+          R1: <b>{actualR1 ? "ON" : "OFF"}</b>{relay1 !== null ? "*" : ""} &middot; R2: <b>{actualR2 ? "ON" : "OFF"}</b>{relay2 !== null ? "*" : ""}
+          {alarmActive && relayReason && <span className="ml-1 opacity-60">({relayReason})</span>}
+          {(relay1 !== null || relay2 !== null) && <span className="ml-1 opacity-50">*manual</span>}
+        </span>
       </footer>
     </div>
   );
