@@ -36,6 +36,7 @@ THRESHOLDS: dict[str, dict[str, float]] = {
 }
 
 THRESHOLD_REFRESH_INTERVAL_S: int = int(os.environ.get("THRESHOLD_REFRESH_INTERVAL", "30"))
+RELAY_POLL_INTERVAL_S:       int = int(os.environ.get("RELAY_POLL_INTERVAL",       "2"))
 
 # ── HTTP client ────────────────────────────────────────────────────────────────
 INGEST_RETRIES:    int   = 5

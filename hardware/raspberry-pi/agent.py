@@ -25,6 +25,7 @@ import threading
 import config
 from gpio_controller import GPIOController
 from ingest_client import IngestClient
+from relay_poller import RelayPoller
 from serial_reader import SerialReader
 from threshold_fetcher import ThresholdFetcher
 from threshold_service import ThresholdService
@@ -63,24 +64,39 @@ def run() -> None:
         on_update=classifier.update_thresholds,
     )
 
+    manual_relay: bool | None = None
+
+    def set_manual_relay(active: bool) -> None:
+        nonlocal manual_relay
+        manual_relay = active
+
+    relay_poller = RelayPoller(
+        dashboard_url=config.DASHBOARD_URL,
+        secret=config.INGEST_SECRET,
+        interval_s=config.RELAY_POLL_INTERVAL_S,
+        on_relay=set_manual_relay,
+    )
+
     gpio.setup()
     reader.open()
     fetcher.start()
+    relay_poller.start()
 
     try:
         for raw in reader.readings():
             result = classifier.evaluate(raw)
-
-            gpio.set_outputs(relay=result.alarm_active, buzzer=result.alarm_active)
+            relay_on = manual_relay if manual_relay is not None else result.alarm_active
+            gpio.set_outputs(relay=relay_on, buzzer=result.alarm_active)
 
             log.info(
-                "MQ-2=%.1f  MQ-136=%.1f  MQ-7=%.1f  water=%.1f%%  temp=%.1f°C  alarm=%s  reason=%s",
+                "MQ-2=%.1f  MQ-136=%.1f  MQ-7=%.1f  water=%.1f%%  temp=%.1f°C  alarm=%s  manual=%s  reason=%s",
                 raw.get("mq2",   0.0),
                 raw.get("mq136", 0.0),
                 raw.get("mq7",   0.0),
                 raw.get("water_level", 0.0),
                 raw.get("temp_c", 0.0),
-                "ON" if result.alarm_active else "OFF",
+                "ON" if relay_on else "OFF",
+                "ON" if manual_relay else "OFF",
                 result.alarm_reason or "—",
             )
 
@@ -94,6 +110,7 @@ def run() -> None:
         log.info("Interrupted — shutting down…")
     finally:
         fetcher.stop()
+        relay_poller.stop()
         gpio.cleanup()
         reader.close()
         log.info("Agent stopped")

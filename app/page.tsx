@@ -618,20 +618,31 @@ export default function Home() {
             <span className="hidden sm:inline">{anyDanger ? "\u26a0 DANGER ALERT" : anyWarn ? "\u26a0 WARNING" : "\u2713 ALL CLEAR"}</span>
           </span>
 
-          {relayActive && (
-            <span
-              className="flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[10px] font-bold animate-pulse"
-              style={{
-                background: "#ef444418",
-                color: "#ef4444",
-                border: "1px solid #ef444444",
-              }}
-              title={relayReason ?? "Relay active"}
-            >
-              <span className="h-1.5 w-1.5 rounded-full" style={{ background: "#ef4444" }} />
-              RELAY
-            </span>
-          )}
+          <button
+            onClick={async () => {
+              try {
+                await fetch("/api/relay", {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({ active: !relayActive }),
+                });
+                setRelayActive(!relayActive);
+              } catch {}
+            }}
+            className="flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[10px] font-bold transition-all hover:scale-105"
+            style={{
+              background: relayActive ? "#ef444418" : dark ? "#1e293b" : "#f1f5f9",
+              color: relayActive ? "#ef4444" : dark ? "#64748b" : "#94a3b8",
+              border: `1px solid ${relayActive ? "#ef444444" : dark ? "#334155" : "#dde4f2"}`,
+              boxShadow: relayActive ? "0 0 12px #ef444444" : "none",
+            }}
+            title={relayActive ? (relayReason ?? "Click to turn relays OFF") : "Click to turn relays ON"}
+          >
+            <span className={`h-1.5 w-1.5 rounded-full ${relayActive ? "animate-pulse" : ""}`}
+              style={{ background: relayActive ? "#ef4444" : dark ? "#475569" : "#cbd5e1" }}
+            />
+            RELAY {relayActive ? "ON" : "OFF"}
+          </button>
 
           <span
             className="hidden sm:flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[10px] font-bold"
