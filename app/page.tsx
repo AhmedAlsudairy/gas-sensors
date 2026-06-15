@@ -413,8 +413,10 @@ export default function Home() {
   const [lastSeen, setLastSeen] = useState<string | null>(null);
   const [readings, setReadings] = useState<Record<string, SensorReading>>({});
   const [histories, setHistories] = useState<Record<string, HistoryRow[]>>({});
-  const [relayState, setRelayState] = useState<"auto" | "on" | "off">("auto");
+  const [relay1, setRelay1] = useState<boolean | null>(null);
+  const [relay2, setRelay2] = useState<boolean | null>(null);
   const [relayReason, setRelayReason] = useState<string | null>(null);
+  const relayMode = relay1 === null && relay2 === null ? "auto" : "manual";
   const [tick, setTick] = useState(0);
   const [thresholds, setThresholds] = useState<Record<string, { warn: number; danger: number }>>(() =>
     Object.fromEntries(SENSORS.map((s) => [s.id, { ...s.thresholds }]))
@@ -435,9 +437,8 @@ export default function Home() {
     fetch("/api/relay")
       .then((r) => r.json())
       .then((data) => {
-        const a = data.active;
-        if (a === true) setRelayState("on");
-        else if (a === false) setRelayState("off");
+        setRelay1(data.relay1 ?? null);
+        setRelay2(data.relay2 ?? null);
       })
       .catch(() => {});
   }, []);
@@ -627,39 +628,67 @@ export default function Home() {
 
           <button
             onClick={async () => {
-              const next: "on" | "auto" = relayState === "auto" ? "on" : "auto";
+              const toAuto = relayMode === "manual";
               try {
                 await fetch("/api/relay", {
                   method: "POST",
                   headers: { "Content-Type": "application/json" },
-                  body: JSON.stringify({ active: next === "on" }),
+                  body: JSON.stringify({ mode: toAuto ? "auto" : "manual" }),
                 });
-                setRelayState(next);
+                if (toAuto) { setRelay1(null); setRelay2(null); }
+                else { setRelay1(true); setRelay2(true); }
               } catch {}
             }}
             className="flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[10px] font-bold transition-all hover:scale-105 active:scale-95"
             style={{
-              background: relayState === "on" ? "#ef444418" : relayState === "off" ? "#94a3b818" : "#22c55e18",
-              color: relayState === "on" ? "#ef4444" : relayState === "off" ? "#94a3b8" : "#22c55e",
-              border: `1px solid ${
-                relayState === "on" ? "#ef444444" : relayState === "off" ? "#94a3b844" : "#22c55e44"
-              }`,
-              boxShadow: relayState === "on" ? "0 0 12px #ef444444" : "none",
+              background: relayMode === "manual" ? "#ef444418" : "#22c55e18",
+              color: relayMode === "manual" ? "#ef4444" : "#22c55e",
+              border: `1px solid ${relayMode === "manual" ? "#ef444444" : "#22c55e44"}`,
+              boxShadow: relayMode === "manual" ? "0 0 12px #ef444444" : "none",
             }}
-            title={
-              relayState === "on"
-                ? "Manual ON — click to return to AUTO"
-                : "AUTO mode — click to force relays ON for testing"
-            }
+            title={relayMode === "auto" ? "AUTO — click to force both relays ON" : "MANUAL — click to return to AUTO"}
           >
             <span
-              className={`h-1.5 w-1.5 rounded-full ${relayState === "on" ? "animate-pulse" : ""}`}
-              style={{
-                background: relayState === "on" ? "#ef4444" : relayState === "off" ? "#94a3b8" : "#22c55e",
-              }}
+              className={`h-1.5 w-1.5 rounded-full ${relayMode === "manual" ? "animate-pulse" : ""}`}
+              style={{ background: relayMode === "manual" ? "#ef4444" : "#22c55e" }}
             />
-            RELAY {relayState === "on" ? "ON" : relayState === "off" ? "OFF" : "AUTO"}
+            {relayMode === "auto" ? "AUTO" : "MANUAL"}
           </button>
+
+          {([1, 2] as const).map((n) => {
+            const val = n === 1 ? relay1 : relay2;
+            const setVal = n === 1 ? setRelay1 : setRelay2;
+            const on = val === true;
+            const auto = val === null;
+            return (
+              <button
+                key={n}
+                onClick={async () => {
+                  const key = `relay${n}` as "relay1" | "relay2";
+                  const next = auto ? true : null; // ON ↔ AUTO
+                  try {
+                    await fetch("/api/relay", {
+                      method: "POST",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify({ [key]: next }),
+                    });
+                    setVal(next);
+                  } catch {}
+                }}
+                className="flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[10px] font-bold transition-all hover:scale-105 active:scale-95"
+                style={{
+                  background: on ? "#ef444418" : auto ? "#22c55e18" : "#94a3b818",
+                  color: on ? "#ef4444" : auto ? "#22c55e" : "#94a3b8",
+                  border: `1px solid ${on ? "#ef444444" : auto ? "#22c55e44" : "#94a3b844"}`,
+                  boxShadow: on ? "0 0 12px #ef444444" : "none",
+                }}
+                title={on ? `Relay ${n} ON — click for AUTO` : auto ? `Relay ${n} AUTO — click for ON` : `Relay ${n} OFF`}
+              >
+                <span className="h-1.5 w-1.5 rounded-full" style={{ background: on ? "#ef4444" : auto ? "#22c55e" : "#94a3b8" }} />
+                R{n} {on ? "ON" : auto ? "AUTO" : "OFF"}
+              </button>
+            );
+          })}
 
           <span
             className="hidden sm:flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[10px] font-bold"
@@ -815,7 +844,11 @@ export default function Home() {
       <footer className="mt-8 pb-6 text-center text-[11px]" style={{ color: dark ? "#1e293b" : "#cbd5e1" }}>
         Gas Sensor Monitor &mdash; MQ-2 &middot; MQ-136 &middot; MQ-7 &middot; Water Level &middot; DS18B20 &mdash;{" "}
         {isLive ? `Live data \u00b7 last update ${lastSeen ?? ""}` : "Waiting for sensor data..."}
-        {relayState !== "auto" && <span className="ml-2 font-bold" style={{ color: relayState === "on" ? "#ef4444" : "#94a3b8" }}>&#9888; Relay manual: {relayState.toUpperCase()}</span>}
+        {relayMode === "manual" && (
+          <span className="ml-2 font-bold" style={{ color: "#ef4444" }}>
+            &#9888; MANUAL &middot; R1: {relay1 === true ? "ON" : relay1 === false ? "OFF" : "AUTO"} &middot; R2: {relay2 === true ? "ON" : relay2 === false ? "OFF" : "AUTO"}
+          </span>
+        )}
       </footer>
     </div>
   );

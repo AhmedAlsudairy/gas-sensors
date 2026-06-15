@@ -1,12 +1,10 @@
 """
-relay_poller.py — Polls dashboard for manual relay state.
+relay_poller.py — Polls dashboard for per-relay manual state.
 
 Polls GET /api/relay every N seconds. The server returns:
-  { "active": true  }  → manual ON — both relays forced on
-  { "active": false }  → manual OFF — both relays forced off
-  { "active": null   }  → auto mode — relays follow alarm logic
+  { "relay1": true|false|null, "relay2": true|false|null }
 
-The callback receives True, False, or None accordingly.
+The callback receives two arguments (relay1, relay2), each True, False, or None.
 """
 
 from __future__ import annotations
@@ -56,16 +54,13 @@ class RelayPoller:
             resp = requests.get(self._url, headers=self._headers, timeout=5)
             if resp.ok:
                 data = resp.json()
-                val = data.get("active")
-                if val is True:
-                    self._on_relay(True)
-                    log.info("Manual relay ON")
-                elif val is False:
-                    self._on_relay(False)
-                    log.info("Manual relay OFF")
-                else:
-                    self._on_relay(None)
-                    log.info("Manual relay released — auto mode")
+                relay1 = data.get("relay1")
+                relay2 = data.get("relay2")
+                self._on_relay(relay1, relay2)
+
+                r1 = {True: "ON", False: "OFF", None: "AUTO"}[relay1]
+                r2 = {True: "ON", False: "OFF", None: "AUTO"}[relay2]
+                log.info("Relay state → relay1=%s  relay2=%s", r1, r2)
         except requests.RequestException as exc:
             log.warning("Relay poll failed: %s", exc)
         self._timer = threading.Timer(self._interval, self._tick)

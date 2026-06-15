@@ -64,11 +64,13 @@ def run() -> None:
         on_update=classifier.update_thresholds,
     )
 
-    manual_relay: bool | None = None
+    manual_relay1: bool | None = None
+    manual_relay2: bool | None = None
 
-    def set_manual_relay(active: bool) -> None:
-        nonlocal manual_relay
-        manual_relay = active
+    def set_manual_relay(r1: bool | None, r2: bool | None) -> None:
+        nonlocal manual_relay1, manual_relay2
+        manual_relay1 = r1
+        manual_relay2 = r2
 
     relay_poller = RelayPoller(
         dashboard_url=config.DASHBOARD_URL,
@@ -85,18 +87,22 @@ def run() -> None:
     try:
         for raw in reader.readings():
             result = classifier.evaluate(raw)
-            relay_on = manual_relay if manual_relay is not None else result.alarm_active
-            gpio.set_outputs(relay=relay_on, buzzer=result.alarm_active)
+            r1_on = manual_relay1 if manual_relay1 is not None else result.alarm_active
+            r2_on = manual_relay2 if manual_relay2 is not None else result.alarm_active
+            gpio.set_outputs(relay1=r1_on, relay2=r2_on, buzzer=result.alarm_active)
 
+            r1_label = {True: "ON", False: "OFF", None: "AUTO"}[manual_relay1]
+            r2_label = {True: "ON", False: "OFF", None: "AUTO"}[manual_relay2]
             log.info(
-                "MQ-2=%.1f  MQ-136=%.1f  MQ-7=%.1f  water=%.1f%%  temp=%.1f°C  alarm=%s  manual=%s  reason=%s",
+                "MQ-2=%.1f  MQ-136=%.1f  MQ-7=%.1f  water=%.1f%%  temp=%.1f°C  alarm=%s  r1=%s  r2=%s  reason=%s",
                 raw.get("mq2",   0.0),
                 raw.get("mq136", 0.0),
                 raw.get("mq7",   0.0),
                 raw.get("water_level", 0.0),
                 raw.get("temp_c", 0.0),
-                "ON" if relay_on else "OFF",
-                "ON" if manual_relay else "OFF",
+                "ON" if result.alarm_active else "OFF",
+                r1_label,
+                r2_label,
                 result.alarm_reason or "—",
             )
 

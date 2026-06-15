@@ -65,13 +65,13 @@ class GPIOController:
         log.info("GPIO cleaned up")
 
     # ── Control ────────────────────────────────────────────────────────────────
-    def set_outputs(self, *, relay: bool, buzzer: bool) -> None:
+    def set_outputs(self, *, relay1: bool, relay2: bool, buzzer: bool) -> None:
         """Drive both relays and buzzer to the requested states."""
-        log.debug("Outputs → relay1=%s  relay2=%s  buzzer=%s", _state(relay), _state(relay), _state(buzzer))
+        log.debug("Outputs → relay1=%s  relay2=%s  buzzer=%s", _state(relay1), _state(relay2), _state(buzzer))
         if not _HAS_GPIO:
             return
-        self._write_pin(self.relay_pin,  active=relay,  active_high=self.relay_active_high)
-        self._write_pin(self.relay2_pin, active=relay,  active_high=self.relay2_active_high)
+        self._write_pin(self.relay_pin,  active=relay1, active_high=self.relay_active_high)
+        self._write_pin(self.relay2_pin, active=relay2, active_high=self.relay2_active_high)
         self._write_pin(self.buzzer_pin, active=buzzer, active_high=self.buzzer_active_high)
 
     # ── Internal ───────────────────────────────────────────────────────────────
