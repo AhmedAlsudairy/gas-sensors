@@ -311,11 +311,11 @@ function SensorCard({ sensor, reading, historyRows, dark, thresholds, onThreshol
             <div className="w-full rounded-xl py-2 px-3 text-[11px] space-y-1 relative" style={{ background: dark ? "rgba(15,23,42,0.6)" : "rgba(226,232,240,0.5)" }}>
               <button
                 onClick={() => { setEditing(true); setEditWarn(String(thresholds.warn)); setEditDanger(String(thresholds.danger)); }}
-                className="absolute top-1 right-1 text-[10px] px-1.5 py-0.5 rounded opacity-0 hover:opacity-100 transition-opacity"
+                className="absolute top-1 right-1 text-[10px] px-1.5 py-0.5 rounded opacity-60 hover:opacity-100 transition-opacity"
                 style={{ background: dark ? "#1e293b" : "#e2e8f0", color: dark ? "#94a3b8" : "#64748b" }}
                 title="Edit thresholds"
               >
-                &#9998;
+                &#9998; edit
               </button>
               {editing ? (
                 <>
@@ -413,6 +413,8 @@ export default function Home() {
   const [lastSeen, setLastSeen] = useState<string | null>(null);
   const [readings, setReadings] = useState<Record<string, SensorReading>>({});
   const [histories, setHistories] = useState<Record<string, HistoryRow[]>>({});
+  const [relayActive, setRelayActive] = useState(false);
+  const [relayReason, setRelayReason] = useState<string | null>(null);
   const [tick, setTick] = useState(0);
   const [thresholds, setThresholds] = useState<Record<string, { warn: number; danger: number }>>(() =>
     Object.fromEntries(SENSORS.map((s) => [s.id, { ...s.thresholds }]))
@@ -473,6 +475,7 @@ export default function Home() {
           const msg = JSON.parse(e.data) as {
             type: string;
             data: Record<string, { value: number; unit: string; status: string; recorded_at: string }>;
+            relay?: { active: boolean; reason: string | null };
           };
           if (msg.type !== "readings") return;
           const hasData = Object.keys(msg.data).length > 0;
@@ -507,6 +510,10 @@ export default function Home() {
             return next;
           });
 
+          if (msg.relay) {
+            setRelayActive(msg.relay.active);
+            setRelayReason(msg.relay.reason);
+          }
           setTick((t) => t + 1);
         } catch {
           // malformed event
@@ -610,6 +617,21 @@ export default function Home() {
             <span className="sm:hidden">{anyDanger ? "ALERT" : anyWarn ? "WARN" : "OK"}</span>
             <span className="hidden sm:inline">{anyDanger ? "\u26a0 DANGER ALERT" : anyWarn ? "\u26a0 WARNING" : "\u2713 ALL CLEAR"}</span>
           </span>
+
+          {relayActive && (
+            <span
+              className="flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[10px] font-bold animate-pulse"
+              style={{
+                background: "#ef444418",
+                color: "#ef4444",
+                border: "1px solid #ef444444",
+              }}
+              title={relayReason ?? "Relay active"}
+            >
+              <span className="h-1.5 w-1.5 rounded-full" style={{ background: "#ef4444" }} />
+              RELAY
+            </span>
+          )}
 
           <span
             className="hidden sm:flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[10px] font-bold"
@@ -765,6 +787,7 @@ export default function Home() {
       <footer className="mt-8 pb-6 text-center text-[11px]" style={{ color: dark ? "#1e293b" : "#cbd5e1" }}>
         Gas Sensor Monitor &mdash; MQ-2 &middot; MQ-136 &middot; MQ-7 &middot; Water Level &middot; DS18B20 &mdash;{" "}
         {isLive ? `Live data \u00b7 last update ${lastSeen ?? ""}` : "Waiting for sensor data..."}
+        {relayActive && <span className="ml-2 font-bold" style={{ color: "#ef4444" }}>&#9888; Relays ON</span>}
       </footer>
     </div>
   );

@@ -29,12 +29,14 @@ except ImportError:
 
 @dataclass
 class GPIOController:
-    """Controls the relay module and the buzzer via GPIO (BCM pin numbers)."""
+    """Controls two relays and a buzzer via GPIO (BCM pin numbers)."""
 
-    relay_pin:          int
-    buzzer_pin:         int
-    relay_active_high:  bool = True
-    buzzer_active_high: bool = True
+    relay_pin:           int
+    relay2_pin:          int
+    buzzer_pin:          int
+    relay_active_high:   bool = True
+    relay2_active_high:  bool = True
+    buzzer_active_high:  bool = True
 
     # ── Lifecycle ──────────────────────────────────────────────────────────────
     def setup(self) -> None:
@@ -44,27 +46,32 @@ class GPIOController:
         _GPIO.setmode(_GPIO.BCM)
         _GPIO.setwarnings(False)
         _GPIO.setup(self.relay_pin,  _GPIO.OUT)
+        _GPIO.setup(self.relay2_pin, _GPIO.OUT)
         _GPIO.setup(self.buzzer_pin, _GPIO.OUT)
         self._write_pin(self.relay_pin,  active=False, active_high=self.relay_active_high)
+        self._write_pin(self.relay2_pin, active=False, active_high=self.relay2_active_high)
         self._write_pin(self.buzzer_pin, active=False, active_high=self.buzzer_active_high)
-        log.info("GPIO pins configured — relay=%d  buzzer=%d", self.relay_pin, self.buzzer_pin)
+        log.info("GPIO pins configured — relay1=%d  relay2=%d  buzzer=%d",
+                 self.relay_pin, self.relay2_pin, self.buzzer_pin)
 
     def cleanup(self) -> None:
         """Deactivate outputs and release GPIO resources."""
         if not _HAS_GPIO:
             return
         self._write_pin(self.relay_pin,  active=False, active_high=self.relay_active_high)
+        self._write_pin(self.relay2_pin, active=False, active_high=self.relay2_active_high)
         self._write_pin(self.buzzer_pin, active=False, active_high=self.buzzer_active_high)
         _GPIO.cleanup()
         log.info("GPIO cleaned up")
 
     # ── Control ────────────────────────────────────────────────────────────────
     def set_outputs(self, *, relay: bool, buzzer: bool) -> None:
-        """Drive relay and buzzer to the requested states."""
-        log.debug("Outputs → relay=%s  buzzer=%s", _state(relay), _state(buzzer))
+        """Drive both relays and buzzer to the requested states."""
+        log.debug("Outputs → relay1=%s  relay2=%s  buzzer=%s", _state(relay), _state(relay), _state(buzzer))
         if not _HAS_GPIO:
             return
         self._write_pin(self.relay_pin,  active=relay,  active_high=self.relay_active_high)
+        self._write_pin(self.relay2_pin, active=relay,  active_high=self.relay2_active_high)
         self._write_pin(self.buzzer_pin, active=buzzer, active_high=self.buzzer_active_high)
 
     # ── Internal ───────────────────────────────────────────────────────────────

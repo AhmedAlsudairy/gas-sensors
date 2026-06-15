@@ -17,9 +17,11 @@ SERIAL_PORT: str = os.environ.get("SERIAL_PORT", "")   # empty → auto-detect
 BAUD_RATE:   int = int(os.environ.get("BAUD_RATE", "115200"))
 
 # ── GPIO pins (BCM numbering) ──────────────────────────────────────────────────
-RELAY_PIN:        int  = int(os.environ.get("RELAY_PIN",   "17"))
-BUZZER_PIN:       int  = int(os.environ.get("BUZZER_PIN",  "18"))
-RELAY_ACTIVE_HIGH: bool = os.environ.get("RELAY_ACTIVE_HIGH", "1") == "1"
+RELAY_PIN:        int  = int(os.environ.get("RELAY_PIN",     "17"))
+RELAY2_PIN:       int  = int(os.environ.get("RELAY2_PIN",    "27"))
+BUZZER_PIN:       int  = int(os.environ.get("BUZZER_PIN",    "18"))
+RELAY_ACTIVE_HIGH:  bool = os.environ.get("RELAY_ACTIVE_HIGH",  "1") == "1"
+RELAY2_ACTIVE_HIGH: bool = os.environ.get("RELAY2_ACTIVE_HIGH", "1") == "1"
 BUZZER_ACTIVE_HIGH: bool = os.environ.get("BUZZER_ACTIVE_HIGH", "1") == "1"
 
 # ── Sensor thresholds (local fallback) ──────────────────────────────────────────

@@ -9,7 +9,8 @@ Wires the individual modules together:
 Hardware wiring
 ───────────────
   Arduino USB   → Raspberry Pi USB  (auto-detected, or set SERIAL_PORT)
-  Relay IN      → GPIO 17 (BCM)
+  Relay1 IN     → GPIO 17 (BCM)
+  Relay2 IN     → GPIO 27 (BCM)
   Buzzer +      → GPIO 18 (BCM)
   Relay/Buzzer GND → Pi GND
   Relay/Buzzer VCC → Pi 5 V
@@ -41,8 +42,10 @@ log = logging.getLogger("gas-agent")
 def run() -> None:
     gpio = GPIOController(
         relay_pin=config.RELAY_PIN,
+        relay2_pin=config.RELAY2_PIN,
         buzzer_pin=config.BUZZER_PIN,
         relay_active_high=config.RELAY_ACTIVE_HIGH,
+        relay2_active_high=config.RELAY2_ACTIVE_HIGH,
         buzzer_active_high=config.BUZZER_ACTIVE_HIGH,
     )
     reader = SerialReader(port=config.SERIAL_PORT, baud=config.BAUD_RATE)

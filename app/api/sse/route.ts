@@ -46,7 +46,20 @@ export async function GET() {
             latest = mem;
           }
 
-          send({ type: "readings", data: latest });
+          let relayActive = false;
+          let relayReason: string | null = null;
+          try {
+            const [relayRow] = await sql`
+              SELECT triggered, reason FROM relay_events
+              ORDER BY recorded_at DESC LIMIT 1
+            `;
+            if (relayRow) {
+              relayActive = relayRow.triggered as boolean;
+              relayReason = relayRow.reason as string | null;
+            }
+          } catch { /* ignore */ }
+
+          send({ type: "readings", data: latest, relay: { active: relayActive, reason: relayReason } });
         } catch {
           // skip
         }
