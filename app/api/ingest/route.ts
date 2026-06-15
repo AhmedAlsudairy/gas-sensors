@@ -1,11 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { sql, initDB } from "@/lib/db";
+import { pushReading } from "@/lib/store";
 
 // POST /api/ingest
-// Body: { readings: [{ sensor_id, ppm, status }], relay: boolean, reason?: string }
-// Called by the Raspberry Pi agent every second
+// Body: { readings: [{ sensor_id, value, unit?, status }], relay: boolean, reason?: string }
 export async function POST(req: NextRequest) {
-  // Simple shared-secret auth – set INGEST_SECRET in .env
   const secret = req.headers.get("x-ingest-secret");
   if (process.env.INGEST_SECRET && secret !== process.env.INGEST_SECRET) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -15,20 +14,25 @@ export async function POST(req: NextRequest) {
     await initDB();
     const body = await req.json();
     const { readings, relay, reason } = body as {
-      readings: { sensor_id: string; ppm: number; status: string }[];
+      readings: { sensor_id: string; value: number; unit?: string; status: string }[];
       relay: boolean;
       reason?: string;
     };
 
-    // Insert all sensor readings in one round-trip
     for (const r of readings) {
       await sql`
-        INSERT INTO sensor_readings (sensor_id, ppm, status)
-        VALUES (${r.sensor_id}, ${r.ppm}, ${r.status})
+        INSERT INTO sensor_readings (sensor_id, value, unit, status)
+        VALUES (${r.sensor_id}, ${r.value}, ${r.unit ?? "raw"}, ${r.status})
       `;
+      pushReading({
+        sensor_id: r.sensor_id,
+        value: r.value,
+        unit: r.unit ?? "raw",
+        status: r.status,
+        recorded_at: new Date().toISOString(),
+      });
     }
 
-    // Log relay state change
     await sql`
       INSERT INTO relay_events (triggered, reason)
       VALUES (${relay}, ${reason ?? null})

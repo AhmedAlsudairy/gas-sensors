@@ -1,13 +1,10 @@
-// GET /api/sse
-// Server-Sent Events stream – browser subscribes, server pushes fresh readings
-// every 1.5 s by polling Neon DB
+// GET /api/sse — Server-Sent Events stream
 import { sql } from "@/lib/db";
+import { getLatestReadings } from "@/lib/store";
 
 export const dynamic = "force-dynamic";
-export const runtime = "edge";
 
 export async function GET() {
-
   const encoder = new TextEncoder();
 
   const stream = new ReadableStream({
@@ -16,7 +13,6 @@ export async function GET() {
         controller.enqueue(encoder.encode(`data: ${JSON.stringify(data)}\n\n`));
       };
 
-      // Send a heartbeat comment so the connection stays alive through proxies
       const heartbeat = setInterval(() => {
         try {
           controller.enqueue(encoder.encode(": heartbeat\n\n"));
@@ -28,28 +24,34 @@ export async function GET() {
 
       const poll = setInterval(async () => {
         try {
-          const rows = await sql`
-            SELECT DISTINCT ON (sensor_id)
-              sensor_id, ppm, status, recorded_at
-            FROM sensor_readings
-            ORDER BY sensor_id, recorded_at DESC
-          `;
+          let latest: Record<string, { value: number; unit: string; status: string; recorded_at: string }> = {};
 
-          const latest: Record<string, { ppm: number; status: string; recorded_at: string }> = {};
-          for (const row of rows) {
-            latest[row.sensor_id as string] = {
-              ppm: row.ppm as number,
-              status: row.status as string,
-              recorded_at: (row.recorded_at as Date).toISOString(),
-            };
+          try {
+            const rows = await sql`
+              SELECT DISTINCT ON (sensor_id)
+                sensor_id, value, unit, status, recorded_at
+              FROM sensor_readings
+              ORDER BY sensor_id, recorded_at DESC
+            `;
+            for (const row of rows) {
+              latest[row.sensor_id as string] = {
+                value: row.value as number,
+                unit: row.unit as string,
+                status: row.status as string,
+                recorded_at: (row.recorded_at as Date).toISOString(),
+              };
+            }
+          } catch {
+            const mem = getLatestReadings();
+            latest = mem;
           }
+
           send({ type: "readings", data: latest });
         } catch {
-          // DB blip — skip this tick
+          // skip
         }
       }, 1500);
 
-      // Clean up when client disconnects
       return () => {
         clearInterval(heartbeat);
         clearInterval(poll);

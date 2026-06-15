@@ -19,7 +19,8 @@ from dataclasses import dataclass, field
 @dataclass(frozen=True)
 class SensorReading:
     sensor_id: str
-    ppm:       float
+    value:     float
+    unit:      str          # "ppm", "%", "°C"
     status:    str          # "safe" | "warning" | "danger"
 
 
@@ -41,7 +42,7 @@ class ThresholdService:
         Parameters
         ----------
         raw : dict
-            Keys: sensor ids ("mq2", "mq136", "mq7"), values: float ppm.
+            Keys: sensor ids ("mq2", "mq136", "mq7", "water_level", "temp_c").
             The "buzzer" key (from Arduino) is intentionally ignored here —
             the Pi makes its own independent alarm decision.
 
@@ -49,10 +50,19 @@ class ThresholdService:
         -------
         EvaluationResult
         """
+        unit_map: dict[str, str] = {
+            "mq2": "raw",
+            "mq136": "raw",
+            "mq7": "raw",
+            "water_level": "%",
+            "temp_c": "°C",
+        }
+
         readings: list[SensorReading] = [
             SensorReading(
                 sensor_id=sid,
-                ppm=float(raw.get(sid, 0.0)),
+                value=float(raw.get(sid, 0.0)),
+                unit=unit_map.get(sid, "ppm"),
                 status=self._classify(sid, float(raw.get(sid, 0.0))),
             )
             for sid in self._thresholds

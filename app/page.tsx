@@ -30,7 +30,7 @@ interface SensorConfig {
 }
 
 interface SensorReading {
-  ppm: number;
+  value: number;
   history: number[];
 }
 
@@ -65,6 +65,26 @@ const SENSORS: SensorConfig[] = [
     thresholds: { warn: 50, danger: 200 },
     baseColor: "#10b981",
     description: "Carbon Monoxide",
+  },
+  {
+    id: "water_level",
+    name: "Water Level",
+    gases: ["Water"],
+    unit: "%",
+    maxPpm: 100,
+    thresholds: { warn: 80, danger: 95 },
+    baseColor: "#06b6d4",
+    description: "Water Level Sensor",
+  },
+  {
+    id: "temp_c",
+    name: "DS18B20",
+    gases: ["Temperature"],
+    unit: "°C",
+    maxPpm: 100,
+    thresholds: { warn: 35, danger: 50 },
+    baseColor: "#f97316",
+    description: "Temperature Sensor",
   },
 ];
 
@@ -102,7 +122,7 @@ function SparkLine({ history, max, color, dark }: { history: number[]; max: numb
 
 // ── Sensor Card ────────────────────────────────────────────────────────────────
 function SensorCard({ sensor, reading, dark }: { sensor: SensorConfig; reading: SensorReading; dark: boolean }) {
-  const status = getStatus(reading.ppm, sensor);
+  const status = getStatus(reading.value, sensor);
   const sColor = statusColor(status);
   const [hovered, setHovered] = useState(false);
 
@@ -171,7 +191,7 @@ function SensorCard({ sensor, reading, dark }: { sensor: SensorConfig; reading: 
         <div className="flex flex-col items-center gap-2">
           {/* 3D gauge — full card width on mobile, capped on larger screens */}
           <Gauge3D
-            ppm={reading.ppm}
+            ppm={reading.value}
             maxPpm={sensor.maxPpm}
             statusColor={sColor}
             baseColor={sensor.baseColor}
@@ -190,7 +210,7 @@ function SensorCard({ sensor, reading, dark }: { sensor: SensorConfig; reading: 
                 transition: "color 0.4s, text-shadow 0.4s",
               }}
             >
-              {reading.ppm.toFixed(1)}
+              {reading.value.toFixed(1)}
             </span>
             <span className="text-xs font-bold uppercase tracking-widest" style={{ color: dark ? "#475569" : "#94a3b8" }}>
               {sensor.unit}
@@ -246,8 +266,11 @@ export default function Home() {
   const [readings, setReadings] = useState<Record<string, SensorReading>>(() =>
     Object.fromEntries(
       SENSORS.map((s) => {
-        const v = s.maxPpm * 0.03;
-        return [s.id, { ppm: v, history: Array(20).fill(v) }];
+        let v: number;
+        if (s.id === "water_level") v = 40;
+        else if (s.id === "temp_c") v = 25;
+        else v = s.maxPpm * 0.03;
+        return [s.id, { value: v, history: Array(20).fill(v) }];
       })
     )
   );
@@ -266,7 +289,7 @@ export default function Home() {
         try {
           const msg = JSON.parse(e.data) as {
             type: string;
-            data: Record<string, { ppm: number; status: string; recorded_at: string }>;
+            data: Record<string, { value: number; unit: string; status: string; recorded_at: string }>;
           };
           if (msg.type !== "readings") return;
           const hasData = Object.keys(msg.data).length > 0;
@@ -282,8 +305,8 @@ export default function Home() {
               if (!incoming) continue;
               const old = prev[sensor.id];
               next[sensor.id] = {
-                ppm: incoming.ppm,
-                history: [...old.history.slice(-19), incoming.ppm],
+                value: incoming.value,
+                history: [...old.history.slice(-19), incoming.value],
               };
             }
             return next;
@@ -322,9 +345,18 @@ export default function Home() {
         const next = { ...prev };
         SENSORS.forEach((s) => {
           const old = prev[s.id];
-          const delta = (Math.random() - 0.42) * s.maxPpm * 0.04;
-          const newPpm = Math.max(0, Math.min(s.maxPpm, old.ppm + delta));
-          next[s.id] = { ppm: newPpm, history: [...old.history.slice(-19), newPpm] };
+          let newValue: number;
+          if (s.id === "water_level") {
+            const delta = (Math.random() - 0.5) * 5;
+            newValue = Math.max(0, Math.min(100, old.value + delta));
+          } else if (s.id === "temp_c") {
+            const delta = (Math.random() - 0.5) * 2;
+            newValue = Math.max(-10, Math.min(60, old.value + delta));
+          } else {
+            const delta = (Math.random() - 0.42) * s.maxPpm * 0.04;
+            newValue = Math.max(0, Math.min(s.maxPpm, old.value + delta));
+          }
+          next[s.id] = { value: newValue, history: [...old.history.slice(-19), newValue] };
         });
         return next;
       });
@@ -335,8 +367,8 @@ export default function Home() {
     };
   }, [isLive]);
 
-  const anyDanger = SENSORS.some((s) => getStatus(readings[s.id].ppm, s) === "danger");
-  const anyWarn = SENSORS.some((s) => getStatus(readings[s.id].ppm, s) === "warning");
+  const anyDanger = SENSORS.some((s) => getStatus(readings[s.id].value, s) === "danger");
+  const anyWarn = SENSORS.some((s) => getStatus(readings[s.id].value, s) === "warning");
   const sysStatus = anyDanger ? "danger" : anyWarn ? "warning" : "safe";
   const sysColor = statusColor(sysStatus);
 
@@ -390,7 +422,7 @@ export default function Home() {
               Gas Sensor Monitor
             </h1>
             <p className="hidden sm:block text-[11px] mt-0.5" style={{ color: dark ? "#64748b" : "#94a3b8" }}>
-              MQ-2 · MQ-136 · MQ-7 — Real-time Concentration
+              Gas · Water · Temperature — Real-time Monitor
             </p>
           </div>
         </div>
@@ -486,7 +518,7 @@ export default function Home() {
               <tbody>
                 {SENSORS.map((s, i) => {
                   const r = readings[s.id];
-                  const status = getStatus(r.ppm, s);
+                  const status = getStatus(r.value, s);
                   const sColor = statusColor(status);
                   return (
                     <tr
@@ -503,7 +535,7 @@ export default function Home() {
                         {s.gases.join(", ")}
                       </td>
                       <td className="px-3 sm:px-6 py-2 sm:py-4 text-right font-mono font-bold" style={{ color: dark ? "#f1f5f9" : "#0f172a" }}>
-                        {r.ppm.toFixed(2)} {s.unit}
+                        {r.value.toFixed(2)} {s.unit}
                       </td>
                       <td className="px-3 sm:px-6 py-2 sm:py-4 text-right hidden md:table-cell" style={{ color: dark ? "#475569" : "#94a3b8" }}>
                         {s.maxPpm} {s.unit}
@@ -517,13 +549,13 @@ export default function Home() {
                             <div
                               className="h-full rounded-full transition-all duration-700"
                               style={{
-                                width: `${Math.min((r.ppm / s.maxPpm) * 100, 100)}%`,
+                                width: `${Math.min((r.value / s.maxPpm) * 100, 100)}%`,
                                 background: `linear-gradient(90deg,${s.baseColor},${sColor})`,
                               }}
                             />
                           </div>
                           <span className="w-10 text-right text-xs" style={{ color: dark ? "#64748b" : "#94a3b8" }}>
-                            {((r.ppm / s.maxPpm) * 100).toFixed(1)}%
+                            {((r.value / s.maxPpm) * 100).toFixed(1)}%
                           </span>
                         </div>
                       </td>
@@ -559,7 +591,7 @@ export default function Home() {
       </main>
 
       <footer className="mt-8 pb-6 text-center text-[11px]" style={{ color: dark ? "#1e293b" : "#cbd5e1" }}>
-        Gas Sensor Monitor — MQ-2 · MQ-136 · MQ-7 —{" "}
+        Gas Sensor Monitor — MQ-2 · MQ-136 · MQ-7 · Water Level · DS18B20 —{" "}
         {isLive ? `Live data · last update ${lastSeen ?? ""}` : "Simulated data (no hardware connected)"}
       </footer>
     </div>

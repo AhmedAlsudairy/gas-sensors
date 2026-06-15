@@ -22,11 +22,14 @@ BUZZER_PIN:       int  = int(os.environ.get("BUZZER_PIN",  "18"))
 RELAY_ACTIVE_HIGH: bool = os.environ.get("RELAY_ACTIVE_HIGH", "1") == "1"
 BUZZER_ACTIVE_HIGH: bool = os.environ.get("BUZZER_ACTIVE_HIGH", "1") == "1"
 
-# ── Sensor thresholds (ppm) ────────────────────────────────────────────────────
+# ── Sensor thresholds ───────────────────────────────────────────────────────────
+# Gas sensor values are raw ADC (0-1023), water_level is % (0-100), temp_c is °C
 THRESHOLDS: dict[str, dict[str, float]] = {
-    "mq2":   {"warn": 300.0,  "danger": 1000.0},
-    "mq136": {"warn": 10.0,   "danger": 50.0},
-    "mq7":   {"warn": 50.0,   "danger": 200.0},
+    "mq2":         {"warn": 600.0,  "danger": 800.0},
+    "mq136":       {"warn": 600.0,  "danger": 800.0},
+    "mq7":         {"warn": 500.0,  "danger": 700.0},
+    "water_level": {"warn": 80.0,   "danger": 95.0},
+    "temp_c":      {"warn": 35.0,   "danger": 50.0},
 }
 
 # ── HTTP client ────────────────────────────────────────────────────────────────

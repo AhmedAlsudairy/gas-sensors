@@ -1,33 +1,41 @@
 /*
-  Gas Sensor Arduino Sketch
-  ─────────────────────────
-  Wiring (based on circuit diagram):
-    MQ-2   → A0  (combustible gas / smoke)
-    MQ-136 → A1  (hydrogen sulfide H₂S)
-    MQ-7   → A2  (carbon monoxide CO)
-    Buzzer → D8  (active buzzer, active-HIGH)
+  Gas Sensor + Water Level + DS18B20 Arduino Sketch
+  ─────────────────────────────────────────────────
+  Wiring:
+    MQ-2     → A0  (combustible gas / smoke)
+    MQ-136   → A1  (hydrogen sulfide H₂S)
+    MQ-7     → A2  (carbon monoxide CO)
+    Water level → A3
+    DS18B20  → D2  (OneWire, 4.7kΩ pull-up to 5V)
+    Buzzer   → D8  (active buzzer, active-HIGH)
 
-  The Raspberry Pi reads Serial at 115200 baud.
-  Every 800 ms the Arduino prints one JSON line:
-    {"mq2":412.3,"mq136":8.1,"mq7":55.7,"buzzer":false}
-
-  Calibration (RL values & R0) – adjust SENSOR_x_R0 to match your
-  sensors after a 24 h burn-in in clean air.
+  Raspberry Pi reads Serial at 115200 baud.
+  Every ~800 ms prints one JSON line:
+    {"mq2":412.3,"mq136":8.1,"mq7":55.7,"water_level":72.5,"temp_c":24.3,"buzzer":false}
 */
 
-// ── Pin assignments ────────────────────────────────────────────────────────────
-const int PIN_MQ2   = A0;
-const int PIN_MQ136 = A1;
-const int PIN_MQ7   = A2;
-const int PIN_BUZZER = 8;
+#include <OneWire.h>
+#include <DallasTemperature.h>
 
-// ── Load resistance in kΩ (the 1 kΩ resistor on sensor board) ─────────────────
+// ── Pin assignments ────────────────────────────────────────────────────────────
+const int PIN_MQ2        = A0;
+const int PIN_MQ136      = A1;
+const int PIN_MQ7        = A2;
+const int PIN_WATER_LEVEL = A3;
+const int PIN_DS18B20    = 2;
+const int PIN_BUZZER     = 8;
+
+// ── OneWire / DallasTemperature ────────────────────────────────────────────────
+OneWire oneWire(PIN_DS18B20);
+DallasTemperature sensors(&oneWire);
+
+// ── Load resistance in kΩ ──────────────────────────────────────────────────────
 const float RL_MQ2   = 1.0;
 const float RL_MQ136 = 1.0;
 const float RL_MQ7   = 1.0;
 
-// ── R0 values – measure in clean air and set here (typical values) ─────────────
-float R0_MQ2   = 9.83;   // kΩ in clean air
+// ── R0 values – measure in clean air and set here ──────────────────────────────
+float R0_MQ2   = 9.83;
 float R0_MQ136 = 3.60;
 float R0_MQ7   = 27.5;
 
@@ -36,35 +44,38 @@ const float THRESHOLD_MQ2   = 1000.0;
 const float THRESHOLD_MQ136 = 50.0;
 const float THRESHOLD_MQ7   = 200.0;
 
-// ── ADC reference voltage ──────────────────────────────────────────────────────
+// ── ADC reference voltage ─────────────────────────────────────────────────────
 const float VCC = 5.0;
 
 // ── Read Rs from raw ADC ───────────────────────────────────────────────────────
 float readRs(int pin, float rl) {
   int raw = analogRead(pin);
-  if (raw <= 0) raw = 1;              // avoid divide-by-zero
+  if (raw <= 0) raw = 1;
   float vout = (raw / 1023.0) * VCC;
   if (vout <= 0) vout = 0.001;
-  return rl * (VCC - vout) / vout;    // Rs = RL * (VCC-Vout) / Vout
+  return rl * (VCC - vout) / vout;
 }
 
-// ── MQ-2  curve: LPG/Propane dominant – datasheet log-log coefficients ─────────
+// ── Sensor conversion functions ────────────────────────────────────────────────
 float mq2ToPpm(float rs) {
   float ratio = rs / R0_MQ2;
-  // PPM = 10^( (log(ratio) - b) / m )  from datasheet curve fit
   return 987.99 * pow(ratio, -2.162);
 }
 
-// ── MQ-136 curve: H₂S dominant ────────────────────────────────────────────────
 float mq136ToPpm(float rs) {
   float ratio = rs / R0_MQ136;
   return 116.6020682 * pow(ratio, -2.769034857);
 }
 
-// ── MQ-7 curve: CO dominant ───────────────────────────────────────────────────
 float mq7ToPpm(float rs) {
   float ratio = rs / R0_MQ7;
   return 99.042 * pow(ratio, -1.518);
+}
+
+// ── Water level (0-100%) ───────────────────────────────────────────────────────
+float readWaterLevel() {
+  int raw = analogRead(PIN_WATER_LEVEL);
+  return (raw / 1023.0) * 100.0;
 }
 
 // ── Setup ──────────────────────────────────────────────────────────────────────
@@ -73,15 +84,15 @@ void setup() {
   pinMode(PIN_BUZZER, OUTPUT);
   digitalWrite(PIN_BUZZER, LOW);
 
-  // Warm-up message
+  sensors.begin();
+
   Serial.println("{\"status\":\"warming_up\"}");
-  delay(20000);   // MQ sensors need ~20 s preheat
+  delay(20000);
   Serial.println("{\"status\":\"ready\"}");
 }
 
 // ── Loop ───────────────────────────────────────────────────────────────────────
 void loop() {
-  // Average 5 samples to reduce noise
   float rs2 = 0, rs136 = 0, rs7 = 0;
   for (int i = 0; i < 5; i++) {
     rs2   += readRs(PIN_MQ2,   RL_MQ2);
@@ -95,27 +106,40 @@ void loop() {
   float ppm136 = mq136ToPpm(rs136);
   float ppm7   = mq7ToPpm(rs7);
 
-  // Clamp negatives (sensor noise)
   if (ppm2   < 0) ppm2   = 0;
   if (ppm136 < 0) ppm136 = 0;
   if (ppm7   < 0) ppm7   = 0;
 
-  // Buzzer – activate if any sensor exceeds danger threshold
+  // Read water level
+  float waterLevel = readWaterLevel();
+
+  // Read DS18B20 temperature
+  sensors.requestTemperatures();
+  float tempC = sensors.getTempCByIndex(0);
+
+  // Buzzer – activate if any gas sensor exceeds danger threshold
   bool danger = (ppm2 >= THRESHOLD_MQ2) ||
                 (ppm136 >= THRESHOLD_MQ136) ||
                 (ppm7   >= THRESHOLD_MQ7);
   digitalWrite(PIN_BUZZER, danger ? HIGH : LOW);
 
-  // Emit compact JSON over Serial (Raspberry Pi reads this)
   Serial.print("{\"mq2\":");
   Serial.print(ppm2, 1);
   Serial.print(",\"mq136\":");
   Serial.print(ppm136, 1);
   Serial.print(",\"mq7\":");
   Serial.print(ppm7, 1);
+  Serial.print(",\"water_level\":");
+  Serial.print(waterLevel, 1);
+  Serial.print(",\"temp_c\":");
+  if (tempC == DEVICE_DISCONNECTED_C) {
+    Serial.print("null");
+  } else {
+    Serial.print(tempC, 1);
+  }
   Serial.print(",\"buzzer\":");
   Serial.print(danger ? "true" : "false");
   Serial.println("}");
 
-  delay(800);  // ~1 reading per second after sampling overhead
+  delay(800);
 }

@@ -1,17 +1,15 @@
 """
 serial_reader.py — Arduino serial communication.
 
-Single Responsibility: open the serial port, iterate JSON lines from
-the Arduino, and yield parsed dictionaries to the caller.
-
-Usage:
-    reader = SerialReader(port="", baud=115200)
-    reader.open()
-    for reading in reader.readings():
-        print(reading)   # {"mq2": 123.4, "mq136": 5.6, "mq7": 78.9, "buzzer": False}
-    reader.close()
+Parses the Arduino's custom text format:
+  STATUS:BOOT
+  MQ2:<value>[:MISSING]
+  MQ136:<value>[:MISSING]
+  MQ7:<value>[:MISSING]
+  WATER:<value>[:MISSING]
+  TEMP:<value>[:MISSING]
+  ---
 """
-import json
 import logging
 import time
 from typing import Generator
@@ -21,15 +19,25 @@ import serial.tools.list_ports
 
 log = logging.getLogger("gas-agent.serial")
 
-# Keywords that appear in descriptions of Arduino-compatible USB-serial adapters
 _ARDUINO_KEYWORDS = ("arduino", "ch340", "cp210", "usb serial", "ttyacm", "ttyusb")
+
+SENSOR_KEYS = ("MQ2", "MQ136", "MQ7", "WATER", "TEMP")
+
+# Map Arduino sensor labels to our internal sensor IDs
+_KEY_MAP = {
+    "MQ2":   "mq2",
+    "MQ136": "mq136",
+    "MQ7":   "mq7",
+    "WATER": "water_level",
+    "TEMP":  "temp_c",
+}
 
 
 class SerialReader:
-    """Reads JSON frames from an Arduino over USB serial."""
+    """Reads sensor frames from an Arduino over USB serial."""
 
     def __init__(self, port: str, baud: int) -> None:
-        self._port = port   # empty string → auto-detect
+        self._port = port
         self._baud = baud
         self._ser: serial.Serial | None = None
 
@@ -37,10 +45,17 @@ class SerialReader:
     def open(self) -> None:
         port = self._port or _auto_detect_port()
         log.info("Opening serial port %s @ %d baud", port, self._baud)
-        self._ser = serial.Serial(port, self._baud, timeout=3)
-        time.sleep(2)                        # allow Arduino to reset after DTR
+        self._ser = serial.Serial()
+        self._ser.port = port
+        self._ser.baudrate = self._baud
+        self._ser.timeout = 3
+        # Don't toggle DTR/RTS – avoids resetting the Arduino
+        self._ser.dtr = False
+        self._ser.rts = False
+        self._ser.open()
+        time.sleep(2)
         self._ser.reset_input_buffer()
-        log.info("Serial port open — waiting for Arduino ready signal…")
+        log.info("Serial port open")
 
     def close(self) -> None:
         if self._ser and self._ser.is_open:
@@ -50,30 +65,53 @@ class SerialReader:
     # ── Iteration ──────────────────────────────────────────────────────────────
     def readings(self) -> Generator[dict, None, None]:
         """
-        Yield one dict per valid sensor-reading JSON line.
-        Status messages (warming_up / ready) are logged and skipped.
-        Malformed lines are silently discarded.
+        Accumulate sensor lines until '---' delimiter, then yield one dict.
         """
         if self._ser is None:
             raise RuntimeError("Call open() before iterating readings()")
+
+        buf: dict[str, float] = {}
+        missing: set[str] = set()
 
         while True:
             raw = self._ser.readline().decode("utf-8", errors="ignore").strip()
             if not raw:
                 continue
 
-            try:
-                data: dict = json.loads(raw)
-            except json.JSONDecodeError:
+            # Frame delimiter – yield accumulated reading
+            if raw == "---":
+                if buf:
+                    out = {}
+                    for key in SENSOR_KEYS:
+                        sid = _KEY_MAP[key]
+                        val = buf.get(sid, 0.0)
+                        # Convert water level raw ADC (0-1023) to percentage
+                        if sid == "water_level":
+                            val = (val / 1023.0) * 100.0
+                        out[sid] = val
+                    out["buzzer"] = False
+                    yield out
+                buf.clear()
+                missing.clear()
+                continue
+
+            # Status messages
+            if raw.startswith("STATUS:"):
+                log.info("Arduino status: %s", raw.split(":", 1)[1])
+                continue
+
+            # Sensor lines: "MQ2:123" or "MQ2:123:MISSING"
+            parts = raw.split(":")
+            if len(parts) >= 2 and parts[0] in _KEY_MAP:
+                sid = _KEY_MAP[parts[0]]
+                try:
+                    buf[sid] = float(parts[1])
+                except ValueError:
+                    log.debug("Bad value in %s", raw)
+                if len(parts) >= 3 and parts[2] == "MISSING":
+                    missing.add(parts[0])
+            else:
                 log.debug("Unparseable serial line: %s", raw)
-                continue
-
-            # Arduino status messages (e.g. {"status": "warming_up"})
-            if "status" in data:
-                log.info("Arduino status: %s", data["status"])
-                continue
-
-            yield data
 
 
 # ── Internal helpers ───────────────────────────────────────────────────────────
@@ -86,7 +124,6 @@ def _auto_detect_port() -> str:
             log.info("Auto-detected Arduino on %s (%s)", p.device, p.description)
             return p.device
 
-    # Fallback: first port with "usb" in the device path
     for p in candidates:
         if "usb" in (p.device or "").lower():
             log.warning("Falling back to USB port %s", p.device)

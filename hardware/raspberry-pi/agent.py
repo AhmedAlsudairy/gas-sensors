@@ -61,10 +61,12 @@ def run() -> None:
             gpio.set_outputs(relay=result.alarm_active, buzzer=result.alarm_active)
 
             log.info(
-                "MQ-2=%.1f  MQ-136=%.1f  MQ-7=%.1f  alarm=%s  reason=%s",
+                "MQ-2=%.1f  MQ-136=%.1f  MQ-7=%.1f  water=%.1f%%  temp=%.1f°C  alarm=%s  reason=%s",
                 raw.get("mq2",   0.0),
                 raw.get("mq136", 0.0),
                 raw.get("mq7",   0.0),
+                raw.get("water_level", 0.0),
+                raw.get("temp_c", 0.0),
                 "ON" if result.alarm_active else "OFF",
                 result.alarm_reason or "—",
             )

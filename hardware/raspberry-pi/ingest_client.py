@@ -53,7 +53,7 @@ class IngestClient:
 
         payload = {
             "readings": [
-                {"sensor_id": r.sensor_id, "ppm": r.ppm, "status": r.status}
+                {"sensor_id": r.sensor_id, "value": r.value, "unit": r.unit, "status": r.status}
                 for r in readings
             ],
             "relay":  relay,

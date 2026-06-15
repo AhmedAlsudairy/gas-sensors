@@ -11,7 +11,8 @@ export async function initDB() {
     CREATE TABLE IF NOT EXISTS sensor_readings (
       id          BIGSERIAL PRIMARY KEY,
       sensor_id   TEXT        NOT NULL,
-      ppm         REAL        NOT NULL,
+      value       REAL        NOT NULL,
+      unit        TEXT        NOT NULL DEFAULT 'ppm',
       status      TEXT        NOT NULL,
       recorded_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     )
