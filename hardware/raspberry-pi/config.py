@@ -22,8 +22,9 @@ BUZZER_PIN:       int  = int(os.environ.get("BUZZER_PIN",  "18"))
 RELAY_ACTIVE_HIGH: bool = os.environ.get("RELAY_ACTIVE_HIGH", "1") == "1"
 BUZZER_ACTIVE_HIGH: bool = os.environ.get("BUZZER_ACTIVE_HIGH", "1") == "1"
 
-# ── Sensor thresholds ───────────────────────────────────────────────────────────
+# ── Sensor thresholds (local fallback) ──────────────────────────────────────────
 # Gas sensor values are raw ADC (0-1023), water_level is % (0-100), temp_c is °C
+# The agent will fetch thresholds from the dashboard API first; these are fallback.
 THRESHOLDS: dict[str, dict[str, float]] = {
     "mq2":         {"warn": 600.0,  "danger": 800.0},
     "mq136":       {"warn": 600.0,  "danger": 800.0},
@@ -31,6 +32,8 @@ THRESHOLDS: dict[str, dict[str, float]] = {
     "water_level": {"warn": 80.0,   "danger": 95.0},
     "temp_c":      {"warn": 35.0,   "danger": 50.0},
 }
+
+THRESHOLD_REFRESH_INTERVAL_S: int = int(os.environ.get("THRESHOLD_REFRESH_INTERVAL", "30"))
 
 # ── HTTP client ────────────────────────────────────────────────────────────────
 INGEST_RETRIES:    int   = 5

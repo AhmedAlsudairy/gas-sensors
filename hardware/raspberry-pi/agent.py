@@ -4,6 +4,7 @@ agent.py — Orchestrator (entry point).
 
 Wires the individual modules together:
   SerialReader → ThresholdService → GPIOController + IngestClient
+  ThresholdFetcher (background) → ThresholdService
 
 Hardware wiring
 ───────────────
@@ -18,11 +19,13 @@ All settings are controlled via environment variables; see config.py.
 
 import logging
 import sys
+import threading
 
 import config
 from gpio_controller import GPIOController
 from ingest_client import IngestClient
 from serial_reader import SerialReader
+from threshold_fetcher import ThresholdFetcher
 from threshold_service import ThresholdService
 
 # ── Logging ────────────────────────────────────────────────────────────────────
@@ -50,9 +53,16 @@ def run() -> None:
         retries=config.INGEST_RETRIES,
         timeout=config.INGEST_TIMEOUT_S,
     )
+    fetcher = ThresholdFetcher(
+        dashboard_url=config.DASHBOARD_URL,
+        secret=config.INGEST_SECRET,
+        interval_s=config.THRESHOLD_REFRESH_INTERVAL_S,
+        on_update=classifier.update_thresholds,
+    )
 
     gpio.setup()
     reader.open()
+    fetcher.start()
 
     try:
         for raw in reader.readings():
@@ -80,6 +90,7 @@ def run() -> None:
     except KeyboardInterrupt:
         log.info("Interrupted — shutting down…")
     finally:
+        fetcher.stop()
         gpio.cleanup()
         reader.close()
         log.info("Agent stopped")

@@ -191,13 +191,30 @@ function HistoryTable({ rows, dark, limit }: { rows: HistoryRow[]; dark: boolean
   );
 }
 
-function SensorCard({ sensor, reading, historyRows, dark }: { sensor: SensorConfig; reading?: SensorReading; historyRows: HistoryRow[]; dark: boolean }) {
+function SensorCard({ sensor, reading, historyRows, dark, thresholds, onThresholdChange }: { sensor: SensorConfig; reading?: SensorReading; historyRows: HistoryRow[]; dark: boolean; thresholds: { warn: number; danger: number }; onThresholdChange: (warn: number, danger: number) => void }) {
   const hasData = !!reading && reading.history.length > 0;
-  const status = hasData ? getStatus(reading!.value, sensor) : "safe";
+  const status = hasData ? getStatus(reading!.value, { ...sensor, thresholds }) : "safe";
   const sColor = statusColor(status);
   const [hovered, setHovered] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
+  const [editing, setEditing] = useState(false);
+  const [editWarn, setEditWarn] = useState(String(thresholds.warn));
+  const [editDanger, setEditDanger] = useState(String(thresholds.danger));
   const fcResult = hasData ? computeForecast(reading!.history) : null;
+
+  useEffect(() => {
+    setEditWarn(String(thresholds.warn));
+    setEditDanger(String(thresholds.danger));
+  }, [thresholds.warn, thresholds.danger]);
+
+  function saveThresholds() {
+    const w = parseFloat(editWarn);
+    const d = parseFloat(editDanger);
+    if (!isNaN(w) && !isNaN(d) && w < d) {
+      onThresholdChange(w, d);
+    }
+    setEditing(false);
+  }
 
   const cardBg = dark
     ? "linear-gradient(150deg,#0f172a 0%,#1a2540 100%)"
@@ -291,15 +308,59 @@ function SensorCard({ sensor, reading, historyRows, dark }: { sensor: SensorConf
               </div>
             </div>
 
-            <div className="w-full rounded-xl py-2 px-3 text-[11px] space-y-1" style={{ background: dark ? "rgba(15,23,42,0.6)" : "rgba(226,232,240,0.5)" }}>
-              <div className="flex justify-between">
-                <span style={{ color: dark ? "#64748b" : "#94a3b8" }}>Warn</span>
-                <span className="font-semibold" style={{ color: "#f59e0b" }}>{sensor.thresholds.warn} ppm</span>
-              </div>
-              <div className="flex justify-between">
-                <span style={{ color: dark ? "#64748b" : "#94a3b8" }}>Danger</span>
-                <span className="font-semibold" style={{ color: "#ef4444" }}>{sensor.thresholds.danger} ppm</span>
-              </div>
+            <div className="w-full rounded-xl py-2 px-3 text-[11px] space-y-1 relative" style={{ background: dark ? "rgba(15,23,42,0.6)" : "rgba(226,232,240,0.5)" }}>
+              <button
+                onClick={() => { setEditing(true); setEditWarn(String(thresholds.warn)); setEditDanger(String(thresholds.danger)); }}
+                className="absolute top-1 right-1 text-[10px] px-1.5 py-0.5 rounded opacity-0 hover:opacity-100 transition-opacity"
+                style={{ background: dark ? "#1e293b" : "#e2e8f0", color: dark ? "#94a3b8" : "#64748b" }}
+                title="Edit thresholds"
+              >
+                &#9998;
+              </button>
+              {editing ? (
+                <>
+                  <div className="flex justify-between items-center gap-2">
+                    <span style={{ color: dark ? "#64748b" : "#94a3b8" }}>Warn</span>
+                    <input
+                      type="number"
+                      step="0.1"
+                      value={editWarn}
+                      onChange={(e) => setEditWarn(e.target.value)}
+                      onKeyDown={(e) => { if (e.key === "Enter") saveThresholds(); if (e.key === "Escape") setEditing(false); }}
+                      className="w-20 text-right font-semibold rounded px-1 py-0.5 outline-none"
+                      style={{ background: dark ? "#0f172a" : "#ffffff", color: "#f59e0b", border: `1px solid ${dark ? "#334155" : "#dde4f2"}` }}
+                      autoFocus
+                    />
+                  </div>
+                  <div className="flex justify-between items-center gap-2">
+                    <span style={{ color: dark ? "#64748b" : "#94a3b8" }}>Danger</span>
+                    <input
+                      type="number"
+                      step="0.1"
+                      value={editDanger}
+                      onChange={(e) => setEditDanger(e.target.value)}
+                      onKeyDown={(e) => { if (e.key === "Enter") saveThresholds(); if (e.key === "Escape") setEditing(false); }}
+                      className="w-20 text-right font-semibold rounded px-1 py-0.5 outline-none"
+                      style={{ background: dark ? "#0f172a" : "#ffffff", color: "#ef4444", border: `1px solid ${dark ? "#334155" : "#dde4f2"}` }}
+                    />
+                  </div>
+                  <div className="flex justify-end gap-1 mt-1">
+                    <button onClick={() => setEditing(false)} className="text-[10px] px-2 py-0.5 rounded" style={{ background: dark ? "#334155" : "#e2e8f0", color: dark ? "#94a3b8" : "#64748b" }}>Cancel</button>
+                    <button onClick={saveThresholds} className="text-[10px] px-2 py-0.5 rounded font-bold" style={{ background: sensor.baseColor, color: "#ffffff" }}>Save</button>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div className="flex justify-between">
+                    <span style={{ color: dark ? "#64748b" : "#94a3b8" }}>Warn</span>
+                    <span className="font-semibold" style={{ color: "#f59e0b" }}>{thresholds.warn} {sensor.unit}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span style={{ color: dark ? "#64748b" : "#94a3b8" }}>Danger</span>
+                    <span className="font-semibold" style={{ color: "#ef4444" }}>{thresholds.danger} {sensor.unit}</span>
+                  </div>
+                </>
+              )}
             </div>
 
             <div>
@@ -353,6 +414,36 @@ export default function Home() {
   const [readings, setReadings] = useState<Record<string, SensorReading>>({});
   const [histories, setHistories] = useState<Record<string, HistoryRow[]>>({});
   const [tick, setTick] = useState(0);
+  const [thresholds, setThresholds] = useState<Record<string, { warn: number; danger: number }>>(() =>
+    Object.fromEntries(SENSORS.map((s) => [s.id, { ...s.thresholds }]))
+  );
+
+  useEffect(() => {
+    fetch("/api/thresholds")
+      .then((r) => r.json())
+      .then((data) => {
+        if (!Array.isArray(data)) return;
+        const t: Record<string, { warn: number; danger: number }> = {};
+        for (const row of data) {
+          t[row.sensor_id] = { warn: row.warn, danger: row.danger };
+        }
+        if (Object.keys(t).length > 0) setThresholds((prev) => ({ ...prev, ...t }));
+      })
+      .catch(() => {});
+  }, []);
+
+  async function handleThresholdChange(sensor_id: string, warn: number, danger: number) {
+    setThresholds((prev) => ({ ...prev, [sensor_id]: { warn, danger } }));
+    try {
+      await fetch("/api/thresholds", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ sensor_id, warn, danger }),
+      });
+    } catch {
+      // silently fail
+    }
+  }
 
   useEffect(() => {
     fetch("/api/readings?limit=20")
@@ -440,13 +531,15 @@ export default function Home() {
     Object.keys(readings).length > 0 &&
     SENSORS.some((s) => {
       const r = readings[s.id];
-      return r && getStatus(r.value, s) === "danger";
+      const t = thresholds[s.id] || s.thresholds;
+      return r && getStatus(r.value, { ...s, thresholds: t }) === "danger";
     });
   const anyWarn =
     Object.keys(readings).length > 0 &&
     SENSORS.some((s) => {
       const r = readings[s.id];
-      return r && getStatus(r.value, s) === "warning";
+      const t = thresholds[s.id] || s.thresholds;
+      return r && getStatus(r.value, { ...s, thresholds: t }) === "warning";
     });
   const sysStatus = anyDanger ? "danger" : anyWarn ? "warning" : "safe";
   const sysColor = statusColor(sysStatus);
@@ -557,6 +650,8 @@ export default function Home() {
               reading={readings[sensor.id]}
               historyRows={histories[sensor.id] || []}
               dark={dark}
+              thresholds={thresholds[sensor.id] || sensor.thresholds}
+              onThresholdChange={(warn, danger) => handleThresholdChange(sensor.id, warn, danger)}
             />
           ))}
         </div>
@@ -594,7 +689,8 @@ export default function Home() {
                   {SENSORS.map((s, i) => {
                     const r = readings[s.id];
                     if (!r) return null;
-                    const status = getStatus(r.value, s);
+                    const t = thresholds[s.id] || s.thresholds;
+                    const status = getStatus(r.value, { ...s, thresholds: t });
                     const sColor = statusColor(status);
                     return (
                       <tr

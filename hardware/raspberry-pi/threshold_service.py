@@ -37,6 +37,10 @@ class ThresholdService:
     def __init__(self, thresholds: dict[str, dict[str, float]]) -> None:
         self._thresholds = thresholds
 
+    def update_thresholds(self, thresholds: dict[str, dict[str, float]]) -> None:
+        """Replace thresholds at runtime (e.g. fetched from dashboard)."""
+        self._thresholds = thresholds
+
     def evaluate(self, raw: dict) -> EvaluationResult:
         """
         Parameters

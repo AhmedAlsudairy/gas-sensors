@@ -29,4 +29,13 @@ export async function initDB() {
       recorded_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     )
   `;
+  await sql`
+    CREATE TABLE IF NOT EXISTS thresholds (
+      id          BIGSERIAL PRIMARY KEY,
+      sensor_id   TEXT        NOT NULL UNIQUE,
+      warn        REAL        NOT NULL,
+      danger      REAL        NOT NULL,
+      updated_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `;
 }
