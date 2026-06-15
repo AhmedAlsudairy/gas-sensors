@@ -105,7 +105,7 @@ function statusLabel(status: string) {
   return status === "danger" ? "DANGER" : status === "warning" ? "WARNING" : "SAFE";
 }
 
-function computeForecast(history: number[]): number | null {
+function computeForecast(history: number[]): { slope: number; intercept: number; next: number } | null {
   if (history.length < 3) return null;
   const n = history.length;
   const sx = ((n - 1) * n) / 2;
@@ -114,7 +114,7 @@ function computeForecast(history: number[]): number | null {
   const sxy = history.reduce((a, b, i) => a + i * b, 0);
   const slope = (n * sxy - sx * sy) / (n * sxx - sx * sx);
   const intercept = (sy - slope * sx) / n;
-  return slope * n + intercept;
+  return { slope, intercept, next: slope * n + intercept };
 }
 
 function SparkLine({ history, max, color, dark }: { history: number[]; max: number; color: string; dark: boolean }) {
@@ -132,6 +132,37 @@ function SparkLine({ history, max, color, dark }: { history: number[]; max: numb
       </defs>
       <polyline points={pts} fill="none" stroke={`url(#${gradId})`} strokeWidth="2" strokeLinejoin="round" strokeLinecap="round" />
     </svg>
+  );
+}
+
+function ForecastChart({ history, fcResult, max, color, dark }: { history: number[]; fcResult: { slope: number; intercept: number; next: number }; max: number; color: string; dark: boolean }) {
+  const { slope, intercept } = fcResult;
+  const W = 178; const H = 60;
+  const n = history.length;
+  const forecastEnd = slope * (n + 1) + intercept;
+
+  const clamp = (v: number) => Math.max(0, Math.min(H, (v / max) * H));
+  const toX = (i: number) => (i / (n + 1)) * W;
+  const toY = (v: number) => H - clamp(v);
+
+  const histPts = history.map((v, i) => `${toX(i)},${toY(v)}`).join(" ");
+  const regressAtLast = slope * (n - 1) + intercept;
+  const linePts = `${toX(0)},${toY(intercept)} ${toX(n - 1)},${toY(regressAtLast)} ${toX(n + 1)},${toY(forecastEnd)}`;
+
+  return (
+    <div className="w-full">
+      <p className="text-[10px] mb-1" style={{ color: dark ? "#334155" : "#cbd5e1" }}>
+        Trend &amp; Forecast
+      </p>
+      <svg width={W} height={H} className="w-full">
+        <polyline points={histPts} fill="none" stroke={color} strokeWidth="2" strokeLinejoin="round" strokeLinecap="round" opacity={0.9} />
+        <polyline points={linePts} fill="none" stroke={color} strokeWidth="1.5" strokeDasharray="4 4" strokeLinecap="round" opacity={0.6} />
+        <circle cx={toX(n + 1)} cy={toY(forecastEnd)} r="5" fill={color} stroke={dark ? "#0f172a" : "#ffffff"} strokeWidth="2" />
+        <text x={toX(n + 1)} y={toY(forecastEnd) - 10} textAnchor="middle" fontSize="9" fontWeight="bold" fill={color}>
+          {fcResult.next.toFixed(1)}
+        </text>
+      </svg>
+    </div>
   );
 }
 
@@ -166,7 +197,7 @@ function SensorCard({ sensor, reading, historyRows, dark }: { sensor: SensorConf
   const sColor = statusColor(status);
   const [hovered, setHovered] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
-  const fc = hasData ? computeForecast(reading!.history) : null;
+  const fcResult = hasData ? computeForecast(reading!.history) : null;
 
   const cardBg = dark
     ? "linear-gradient(150deg,#0f172a 0%,#1a2540 100%)"
@@ -276,13 +307,8 @@ function SensorCard({ sensor, reading, historyRows, dark }: { sensor: SensorConf
               <SparkLine history={reading!.history} max={sensor.maxPpm} color={sColor} dark={dark} />
             </div>
 
-            {fc !== null && (
-              <div className="rounded-xl py-2 px-3 text-[11px] flex justify-between items-center" style={{ background: dark ? "rgba(15,23,42,0.5)" : "rgba(241,245,249,0.8)" }}>
-                <span style={{ color: dark ? "#64748b" : "#94a3b8" }}>Forecast next</span>
-                <span className="font-bold" style={{ color: sensor.baseColor }}>
-                  {fc.toFixed(1)} {sensor.unit}
-                </span>
-              </div>
+            {fcResult !== null && (
+              <ForecastChart history={reading!.history} fcResult={fcResult} max={sensor.maxPpm} color={sColor} dark={dark} />
             )}
 
             <div className="grid grid-cols-3 gap-2">
