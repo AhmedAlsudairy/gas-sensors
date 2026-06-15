@@ -1,18 +1,19 @@
 [Unit]
-Description=Gas Sensor Raspberry Pi Agent
+Description=Gas Sensor Agent — reads Arduino serial and sends to dashboard
 After=network-online.target
 Wants=network-online.target
 
 [Service]
 Type=simple
-User=pi
-WorkingDirectory=/home/pi/gas-sensor/hardware/raspberry-pi
-ExecStart=/home/pi/gas-sensor/hardware/raspberry-pi/venv/bin/python agent.py
-EnvironmentFile=/home/pi/gas-sensor/.env
+User=asim
+WorkingDirectory=/home/asim/gas-sensors/hardware/raspberry-pi
+ExecStart=/home/asim/gas-sensors/hardware/raspberry-pi/venv/bin/python /home/asim/gas-sensors/hardware/raspberry-pi/agent.py
 Restart=always
 RestartSec=5
-StandardOutput=journal
-StandardError=journal
+Environment=INGEST_SECRET=""
+Environment=DASHBOARD_URL="http://localhost:3000"
+Environment=SERIAL_PORT="/dev/ttyACM0"
+Environment=BAUD_RATE="115200"
 
 [Install]
 WantedBy=multi-user.target
