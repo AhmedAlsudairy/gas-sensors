@@ -55,9 +55,13 @@ class ThresholdFetcher:
     def _tick(self) -> None:
         if not self._started:
             return
-        self._timer = threading.Timer(self._interval, self._tick)
+        self._timer = threading.Timer(self._interval, self._do_fetch)
         self._timer.daemon = True
         self._timer.start()
+
+    def _do_fetch(self) -> None:
+        self._fetch()
+        self._tick()
 
     def _fetch(self) -> None:
         try:

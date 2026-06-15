@@ -65,7 +65,7 @@ class RelayPoller:
                     log.info("Manual relay OFF")
                 else:
                     self._on_relay(None)
-                    log.debug("Manual relay released — auto mode")
+                    log.info("Manual relay released — auto mode")
         except requests.RequestException as exc:
             log.warning("Relay poll failed: %s", exc)
         self._timer = threading.Timer(self._interval, self._tick)

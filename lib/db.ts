@@ -38,4 +38,22 @@ export async function initDB() {
       updated_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
     )
   `;
+  // Seed default thresholds if table is empty
+  const [count] = await sql`SELECT COUNT(*)::int AS cnt FROM thresholds`;
+  if (count && count.cnt === 0) {
+    const defaults: { sensor_id: string; warn: number; danger: number }[] = [
+      { sensor_id: "mq2",         warn: 600, danger: 800 },
+      { sensor_id: "mq136",       warn: 600, danger: 800 },
+      { sensor_id: "mq7",         warn: 500, danger: 700 },
+      { sensor_id: "water_level", warn: 80,  danger: 95 },
+      { sensor_id: "temp_c",      warn: 35,  danger: 50 },
+    ];
+    for (const d of defaults) {
+      await sql`
+        INSERT INTO thresholds (sensor_id, warn, danger)
+        VALUES (${d.sensor_id}, ${d.warn}, ${d.danger})
+        ON CONFLICT (sensor_id) DO NOTHING
+      `;
+    }
+  }
 }
