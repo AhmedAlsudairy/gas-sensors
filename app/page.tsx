@@ -224,7 +224,17 @@ function SensorCard({ sensor, reading, historyRows, dark, thresholds, onThreshol
   const [editing, setEditing] = useState(false);
   const [editWarn, setEditWarn] = useState(String(thresholds.warn));
   const [editDanger, setEditDanger] = useState(String(thresholds.danger));
+  const [now, setNow] = useState(Date.now());
   const fcResult = hasData ? computeForecast(reading!.history) : null;
+
+  useEffect(() => {
+    const id = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(id);
+  }, []);
+
+  const lastMs = hasData ? now - new Date(reading!.recorded_at).getTime() : Infinity;
+  const stale = lastMs >= 3_600_000; // >1 hour
+  const recent = lastMs < 60_000; // <1 minute
 
   useEffect(() => {
     setEditWarn(String(thresholds.warn));
@@ -271,6 +281,19 @@ function SensorCard({ sensor, reading, historyRows, dark, thresholds, onThreshol
             <h2 className="text-2xl font-black mt-0.5" style={{ color: sensor.baseColor, filter: `drop-shadow(0 0 8px ${sensor.baseColor}66)` }}>
               {sensor.name}
             </h2>
+            <div className="flex items-center gap-1.5 mt-0.5">
+              {hasData && (
+                <>
+                  <span className={`h-2 w-2 rounded-full ${recent ? "animate-pulse" : ""}`} style={{
+                    background: stale ? "#ef4444" : recent ? "#22c55e" : "#f59e0b",
+                    boxShadow: recent ? "0 0 6px #22c55e88" : "none",
+                  }} />
+                  <span className="text-[10px] font-mono" style={{ color: dark ? "#64748b" : "#94a3b8" }}>
+                    {stale ? ">1h" : lastMs < 1000 ? "now" : `${Math.floor(lastMs / 60000)}m ${Math.floor((lastMs % 60000) / 1000)}s`}
+                  </span>
+                </>
+              )}
+            </div>
           </div>
           {hasData && (
             <span
