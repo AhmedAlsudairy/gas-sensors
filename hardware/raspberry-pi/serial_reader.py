@@ -49,12 +49,19 @@ class SerialReader:
         self._ser.port = port
         self._ser.baudrate = self._baud
         self._ser.timeout = 3
-        # Don't toggle DTR/RTS – avoids resetting the Arduino
-        self._ser.dtr = False
-        self._ser.rts = False
-        self._ser.open()
-        time.sleep(2)
-        self._ser.reset_input_buffer()
+        try:
+            # Toggle DTR briefly to reset the Arduino on (re)connect
+            self._ser.dtr = True
+            self._ser.rts = False
+            self._ser.open()
+            time.sleep(0.1)
+            self._ser.dtr = False
+            time.sleep(2)
+            self._ser.reset_input_buffer()
+        except (serial.SerialException, OSError) as exc:
+            log.warning("Serial open failed: %s", exc)
+            self._ser = None
+            raise
         log.info("Serial port open")
 
     def close(self) -> None:
@@ -62,21 +69,47 @@ class SerialReader:
             self._ser.close()
             log.info("Serial port closed")
 
+    def reopen(self) -> None:
+        """Close and reopen the serial port to reset the Arduino."""
+        self.close()
+        time.sleep(1)
+        self.open()
+
     # ── Iteration ──────────────────────────────────────────────────────────────
     def readings(self) -> Generator[dict, None, None]:
         """
         Accumulate sensor lines until '---' delimiter, then yield one dict.
+        Auto-reconnects if no valid data received for >60 seconds.
         """
         if self._ser is None:
             raise RuntimeError("Call open() before iterating readings()")
 
         buf: dict[str, float] = {}
         missing: set[str] = set()
+        idle_loops = 0
 
         while True:
-            raw = self._ser.readline().decode("utf-8", errors="ignore").strip()
-            if not raw:
+            try:
+                raw = self._ser.readline().decode("utf-8", errors="ignore").strip()
+            except serial.SerialException as exc:
+                log.warning("Serial read error: %s — reconnecting in 5s", exc)
+                time.sleep(5)
+                self.reopen()
                 continue
+
+            if not raw:
+                idle_loops += 1
+                if idle_loops == 5:  # ~15s
+                    log.warning("No serial data for ~15s — waiting…")
+                elif idle_loops >= 20:  # ~60s
+                    log.warning("No serial data for ~60s — reconnecting")
+                    idle_loops = 0
+                    buf.clear()
+                    missing.clear()
+                    self.reopen()
+                continue
+
+            idle_loops = 0
 
             # Frame delimiter – yield accumulated reading
             if raw == "---":

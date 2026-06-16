@@ -21,6 +21,9 @@ All settings are controlled via environment variables; see config.py.
 import logging
 import sys
 import threading
+import time
+
+import serial
 
 import config
 from gpio_controller import GPIOController
@@ -80,55 +83,75 @@ def run() -> None:
     )
 
     gpio.setup()
-    reader.open()
     fetcher.start()
     relay_poller.start()
 
-    try:
-        for raw in reader.readings():
-            result = classifier.evaluate(raw)
-            r1_on = manual_relay1 if manual_relay1 is not None else result.alarm_active
-            r2_on = manual_relay2 if manual_relay2 is not None else result.alarm_active
-            gpio.set_outputs(relay1=r1_on, relay2=r2_on, buzzer=result.alarm_active)
+    while True:
+        try:
+            reader.open()
+        except (serial.SerialException, OSError, RuntimeError):
+            log.warning("Serial port not available — retrying in 10s")
+            time.sleep(10)
+            continue
+        except KeyboardInterrupt:
+            log.info("Interrupted — shutting down…")
+            break
 
-            readings: list = list(result.readings)
-            if "water_level_adc" in raw:
-                readings.append(SensorReading(
-                    sensor_id="water_level_adc",
-                    value=raw["water_level_adc"],
-                    unit="raw",
-                    status="safe",
-                ))
+        try:
+            for raw in reader.readings():
+                result = classifier.evaluate(raw)
+                r1_on = manual_relay1 if manual_relay1 is not None else result.alarm_active
+                r2_on = manual_relay2 if manual_relay2 is not None else result.alarm_active
+                gpio.set_outputs(relay1=r1_on, relay2=r2_on, buzzer=result.alarm_active)
 
-            r1_label = {True: "ON", False: "OFF", None: "AUTO"}[manual_relay1]
-            r2_label = {True: "ON", False: "OFF", None: "AUTO"}[manual_relay2]
-            log.info(
-                "MQ-2=%.1f  MQ-136=%.1f  MQ-7=%.1f  water=%.1f%%  temp=%.1f°C  alarm=%s  r1=%s  r2=%s  reason=%s",
-                raw.get("mq2",   0.0),
-                raw.get("mq136", 0.0),
-                raw.get("mq7",   0.0),
-                raw.get("water_level", 0.0),
-                raw.get("temp_c", 0.0),
-                "ON" if result.alarm_active else "OFF",
-                r1_label,
-                r2_label,
-                result.alarm_reason or "—",
-            )
+                readings: list = list(result.readings)
+                if "water_level_adc" in raw:
+                    readings.append(SensorReading(
+                        sensor_id="water_level_adc",
+                        value=raw["water_level_adc"],
+                        unit="raw",
+                        status="safe",
+                    ))
 
-            client.post(
-                readings=readings,
-                relay=result.alarm_active,
-                reason=result.alarm_reason,
-            )
+                r1_label = {True: "ON", False: "OFF", None: "AUTO"}[manual_relay1]
+                r2_label = {True: "ON", False: "OFF", None: "AUTO"}[manual_relay2]
+                log.info(
+                    "MQ-2=%.1f  MQ-136=%.1f  MQ-7=%.1f  water=%.1f%%  temp=%.1f°C  alarm=%s  r1=%s  r2=%s  reason=%s",
+                    raw.get("mq2",   0.0),
+                    raw.get("mq136", 0.0),
+                    raw.get("mq7",   0.0),
+                    raw.get("water_level", 0.0),
+                    raw.get("temp_c", 0.0),
+                    "ON" if result.alarm_active else "OFF",
+                    r1_label,
+                    r2_label,
+                    result.alarm_reason or "—",
+                )
 
-    except KeyboardInterrupt:
-        log.info("Interrupted — shutting down…")
-    finally:
-        fetcher.stop()
-        relay_poller.stop()
-        gpio.cleanup()
-        reader.close()
-        log.info("Agent stopped")
+                client.post(
+                    readings=readings,
+                    relay=result.alarm_active,
+                    reason=result.alarm_reason,
+                )
+        except serial.SerialException as exc:
+            log.warning("Serial connection lost: %s — reconnecting in 5s", exc)
+            reader.close()
+            time.sleep(5)
+        except KeyboardInterrupt:
+            log.info("Interrupted — shutting down…")
+            break
+        except Exception as exc:
+            log.warning("Unexpected error: %s — reconnecting in 10s", exc)
+            reader.close()
+            time.sleep(10)
+            continue
+        break  # normal exit (shouldn't happen)
+
+    fetcher.stop()
+    relay_poller.stop()
+    gpio.cleanup()
+    reader.close()
+    log.info("Agent stopped")
 
 
 if __name__ == "__main__":
