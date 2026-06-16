@@ -87,6 +87,7 @@ class SerialReader:
                         val = buf.get(sid, 0.0)
                         # Convert water level raw ADC (0-1023) to percentage
                         if sid == "water_level":
+                            out["water_level_adc"] = val  # preserve raw value
                             val = (val / 1023.0) * 100.0
                         out[sid] = val
                     out["buzzer"] = False

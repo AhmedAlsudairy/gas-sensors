@@ -91,6 +91,15 @@ def run() -> None:
             r2_on = manual_relay2 if manual_relay2 is not None else result.alarm_active
             gpio.set_outputs(relay1=r1_on, relay2=r2_on, buzzer=result.alarm_active)
 
+            readings: list = list(result.readings)
+            if "water_level_adc" in raw:
+                readings.append(SensorReading(
+                    sensor_id="water_level_adc",
+                    value=raw["water_level_adc"],
+                    unit="raw",
+                    status="safe",
+                ))
+
             r1_label = {True: "ON", False: "OFF", None: "AUTO"}[manual_relay1]
             r2_label = {True: "ON", False: "OFF", None: "AUTO"}[manual_relay2]
             log.info(
@@ -107,7 +116,7 @@ def run() -> None:
             )
 
             client.post(
-                readings=result.readings,
+                readings=readings,
                 relay=result.alarm_active,
                 reason=result.alarm_reason,
             )

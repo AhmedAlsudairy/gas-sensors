@@ -167,31 +167,55 @@ function ForecastChart({ history, fcResult, max, color, dark }: { history: numbe
 }
 
 function HistoryTable({ rows, dark, limit }: { rows: HistoryRow[]; dark: boolean; limit?: number }) {
-  const display = limit ? rows.slice(-limit).reverse() : rows.slice().reverse();
+  const [hours, setHours] = useState<number | null>(null);
+  const cutoff = hours !== null ? Date.now() - hours * 3_600_000 : 0;
+  const filtered = rows.filter((r) => new Date(r.recorded_at).getTime() >= cutoff);
+  const display = limit ? filtered.slice(-limit).reverse() : filtered.slice().reverse();
   if (display.length === 0) return null;
   return (
-    <div className="w-full max-h-[300px] overflow-y-auto">
-      <table className="w-full text-[10px] font-mono" style={{ color: dark ? "#94a3b8" : "#64748b" }}>
-        <thead className="sticky top-0" style={{ background: dark ? "#0f172a" : "#f8fafc" }}>
-          <tr style={{ borderBottom: `1px solid ${dark ? "#1e293b" : "#e2e8f0"}` }}>
-            <th className="text-left py-1 pr-2 font-semibold">Value</th>
-            <th className="text-right py-1 font-semibold">Time</th>
-          </tr>
-        </thead>
-        <tbody>
-          {display.map((row, i) => (
-            <tr key={i} style={{ borderBottom: `1px solid ${dark ? "#1e293b55" : "#f1f5f9"}` }}>
-              <td className="py-1 pr-2 font-bold">{row.value.toFixed(1)}</td>
-              <td className="text-right py-1">{new Date(row.recorded_at).toLocaleTimeString()}</td>
+    <div className="w-full">
+      <div className="flex gap-1 mb-1.5">
+        {[null, 1, 6, 24].map((h) => (
+          <button
+            key={h ?? -1}
+            onClick={() => setHours(h)}
+            className="rounded px-1.5 py-0.5 text-[9px] font-bold transition-all"
+            style={{
+              background: hours === h ? (dark ? "#334155" : "#e2e8f0") : "transparent",
+              color: hours === h ? (dark ? "#f1f5f9" : "#0f172a") : (dark ? "#64748b" : "#94a3b8"),
+              border: `1px solid ${hours === h ? (dark ? "#475569" : "#cbd5e1") : "transparent"}`,
+            }}
+          >
+            {h === null ? "All" : `${h}h`}
+          </button>
+        ))}
+      </div>
+      <div className="max-h-[300px] overflow-y-auto">
+        <table className="w-full text-[10px] font-mono" style={{ color: dark ? "#94a3b8" : "#64748b" }}>
+          <thead className="sticky top-0" style={{ background: dark ? "#0f172a" : "#f8fafc" }}>
+            <tr style={{ borderBottom: `1px solid ${dark ? "#1e293b" : "#e2e8f0"}` }}>
+              <th className="text-left py-1 pr-2 font-semibold">Value</th>
+              <th className="text-right py-1 font-semibold">Time</th>
             </tr>
-          ))}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {display.map((row, i) => (
+              <tr key={i} style={{ borderBottom: `1px solid ${dark ? "#1e293b55" : "#f1f5f9"}` }}>
+                <td className="py-1 pr-2 font-bold">{row.value.toFixed(1)}</td>
+                <td className="text-right py-1">{new Date(row.recorded_at).toLocaleTimeString()}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+        <p className="text-[9px] mt-1 text-center" style={{ color: dark ? "#475569" : "#94a3b8" }}>
+          {filtered.length} of {rows.length} records
+        </p>
+      </div>
     </div>
   );
 }
 
-function SensorCard({ sensor, reading, historyRows, dark, thresholds, onThresholdChange }: { sensor: SensorConfig; reading?: SensorReading; historyRows: HistoryRow[]; dark: boolean; thresholds: { warn: number; danger: number }; onThresholdChange: (warn: number, danger: number) => void }) {
+function SensorCard({ sensor, reading, historyRows, dark, thresholds, onThresholdChange, waterLevelAdc }: { sensor: SensorConfig; reading?: SensorReading; historyRows: HistoryRow[]; dark: boolean; thresholds: { warn: number; danger: number }; onThresholdChange: (warn: number, danger: number) => void; waterLevelAdc?: number | null }) {
   const hasData = !!reading && reading.history.length > 0;
   const status = hasData ? getStatus(reading!.value, { ...sensor, thresholds }) : "safe";
   const sColor = statusColor(status);
@@ -305,6 +329,11 @@ function SensorCard({ sensor, reading, historyRows, dark, thresholds, onThreshol
                 <span className="text-xs font-bold uppercase tracking-widest" style={{ color: dark ? "#475569" : "#94a3b8" }}>
                   {sensor.unit}
                 </span>
+                {sensor.id === "water_level" && waterLevelAdc !== null && waterLevelAdc !== undefined && (
+                  <span className="text-[10px] font-mono mt-0.5" style={{ color: dark ? "#64748b" : "#94a3b8" }}>
+                    ADC: {waterLevelAdc.toFixed(0)}
+                  </span>
+                )}
               </div>
             </div>
 
@@ -413,6 +442,7 @@ export default function Home() {
   const [lastSeen, setLastSeen] = useState<string | null>(null);
   const [readings, setReadings] = useState<Record<string, SensorReading>>({});
   const [histories, setHistories] = useState<Record<string, HistoryRow[]>>({});
+  const [waterLevelAdc, setWaterLevelAdc] = useState<number | null>(null);
   const [relay1, setRelay1] = useState<boolean | null>(null);
   const [relay2, setRelay2] = useState<boolean | null>(null);
   const [alarmActive, setAlarmActive] = useState(false);
@@ -460,7 +490,7 @@ export default function Home() {
   }
 
   useEffect(() => {
-    fetch("/api/readings?limit=20")
+    fetch("/api/readings?limit=200")
       .then((r) => r.json())
       .then((data) => {
         const h: Record<string, HistoryRow[]> = {};
@@ -521,6 +551,9 @@ export default function Home() {
             }
             return next;
           });
+
+          const wla = msg.data["water_level_adc"];
+          if (wla) setWaterLevelAdc(wla.value);
 
           if (msg.relay) {
             setAlarmActive(msg.relay.active);
@@ -740,6 +773,7 @@ export default function Home() {
               dark={dark}
               thresholds={thresholds[sensor.id] || sensor.thresholds}
               onThresholdChange={(warn, danger) => handleThresholdChange(sensor.id, warn, danger)}
+              waterLevelAdc={sensor.id === "water_level" ? waterLevelAdc : undefined}
             />
           ))}
         </div>
