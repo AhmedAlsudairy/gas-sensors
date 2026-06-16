@@ -31,7 +31,7 @@ from ingest_client import IngestClient
 from relay_poller import RelayPoller
 from serial_reader import SerialReader
 from threshold_fetcher import ThresholdFetcher
-from threshold_service import ThresholdService
+from threshold_service import SensorReading, ThresholdService
 
 # ── Logging ────────────────────────────────────────────────────────────────────
 logging.basicConfig(
