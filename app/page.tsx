@@ -727,7 +727,7 @@ export default function Home() {
                 key={n}
                 onClick={async () => {
                   const key = `relay${n}` as "relay1" | "relay2";
-                  const next = manual === true ? null : true; // ON ↔ AUTO (toggle manual override)
+                  const next = manual === true ? false : manual === false ? null : true;
                   try {
                     await fetch("/api/relay", {
                       method: "POST",
@@ -744,13 +744,13 @@ export default function Home() {
                   border: `1px solid ${actual ? "#ef444444" : "#22c55e44"}`,
                   boxShadow: actual ? "0 0 12px #ef444444" : "none",
                 }}
-                title={actual ? `Relay ${n} ON${manual !== null ? " (manual)" : " (alarm)"} — click to toggle` : `Relay ${n} OFF — click for ON`}
+                title={`R${n}: ${manual === null ? "AUTO" : manual ? "MANUAL ON" : "MANUAL OFF"} — click to cycle`}
               >
                 <span className={`h-1.5 w-1.5 rounded-full ${actual ? "animate-pulse" : ""}`} style={{ background: actual ? "#ef4444" : "#22c55e" }} />
                 R{n} {actual ? "ON" : "OFF"}
-                {manual === null && !actual && <span className="ml-0.5 opacity-50">A</span>}
-                {manual === null && actual && <span className="ml-0.5 opacity-50">A</span>}
-                {manual !== null && <span className="ml-0.5 opacity-50">M</span>}
+                {manual === null && <span className="ml-0.5 opacity-50">A</span>}
+                {manual === true && <span className="ml-0.5 opacity-50">M!</span>}
+                {manual === false && <span className="ml-0.5 opacity-50">M</span>}
               </button>
             );
           })}

@@ -26,6 +26,7 @@ import time
 import serial
 
 import config
+from db_cleanup import DbCleanup
 from gpio_controller import GPIOController
 from ingest_client import IngestClient
 from relay_poller import RelayPoller
@@ -82,9 +83,15 @@ def run() -> None:
         on_relay=set_manual_relay,
     )
 
+    cleanup = DbCleanup(
+        dashboard_url=config.DASHBOARD_URL,
+        secret=config.INGEST_SECRET,
+    )
+
     gpio.setup()
     fetcher.start()
     relay_poller.start()
+    cleanup.start()
 
     while True:
         try:
@@ -147,6 +154,7 @@ def run() -> None:
             continue
         break  # normal exit (shouldn't happen)
 
+    cleanup.stop()
     fetcher.stop()
     relay_poller.stop()
     gpio.cleanup()
