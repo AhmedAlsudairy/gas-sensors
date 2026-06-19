@@ -31,6 +31,7 @@ from db_cleanup import DbCleanup
 from gpio_controller import GPIOController
 from ingest_client import IngestClient
 from mqtt_client import MqttClient
+from relay_poller import RelayPoller
 from serial_reader import SerialReader
 from threshold_fetcher import ThresholdFetcher
 from threshold_service import SensorReading, ThresholdService
@@ -89,6 +90,13 @@ def run() -> None:
     )
     mqtt.set_relay_callback(set_manual_relay)
 
+    relay_poller = RelayPoller(
+        dashboard_url=config.DASHBOARD_URL,
+        secret=config.INGEST_SECRET,
+        interval_s=config.RELAY_POLL_INTERVAL_S,
+        on_relay=set_manual_relay,
+    )
+
     cleanup = DbCleanup(
         dashboard_url=config.DASHBOARD_URL,
         secret=config.INGEST_SECRET,
@@ -97,6 +105,7 @@ def run() -> None:
     gpio.setup()
     mqtt.start()
     fetcher.start()
+    relay_poller.start()
     cleanup.start()
 
     while True:
@@ -181,6 +190,7 @@ def run() -> None:
     mqtt.stop()
     cleanup.stop()
     fetcher.stop()
+    relay_poller.stop()
     gpio.cleanup()
     reader.close()
     log.info("Agent stopped")

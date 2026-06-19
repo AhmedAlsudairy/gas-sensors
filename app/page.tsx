@@ -689,15 +689,21 @@ export default function Home() {
           </span>
 
           <button
-            onClick={() => {
+            onClick={async () => {
               const toAuto = relayMode === "manual";
               if (toAuto) {
                 setRelay1(null); setRelay2(null);
-                mqttPub("relay/command", { relay1: null, relay2: null });
               } else {
                 setRelay1(true); setRelay2(true);
-                mqttPub("relay/command", { relay1: true, relay2: true });
               }
+              // HTTP (primary)
+              await fetch("/api/relay", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ mode: toAuto ? "auto" : "manual" }),
+              }).catch(() => {});
+              // MQTT (fast)
+              mqttPub("relay/command", toAuto ? { relay1: null, relay2: null } : { relay1: true, relay2: true });
             }}
             className="flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[10px] font-bold transition-all hover:scale-105 active:scale-95"
             style={{
@@ -725,10 +731,17 @@ export default function Home() {
             return (
               <button
                 key={n}
-                onClick={() => {
+                onClick={async () => {
                   const key = `relay${n}` as "relay1" | "relay2";
                   const next = manual === true ? false : manual === false ? null : true;
                   setManual(next);
+                  // HTTP (primary)
+                  await fetch("/api/relay", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ [key]: next }),
+                  }).catch(() => {});
+                  // MQTT (fast)
                   mqttPub("relay/command", { [key]: next });
                 }}
                 className="flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[10px] font-bold transition-all hover:scale-105 active:scale-95"
