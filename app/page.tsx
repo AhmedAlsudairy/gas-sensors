@@ -513,7 +513,7 @@ export default function Home() {
   }
 
   useEffect(() => {
-    fetch("/api/readings?limit=200")
+    fetch("/api/readings?limit=200&hours=24")
       .then((r) => r.json())
       .then((data) => {
         const h: Record<string, HistoryRow[]> = {};

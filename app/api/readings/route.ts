@@ -1,18 +1,21 @@
 import { NextResponse } from "next/server";
 import { sql, initDB } from "@/lib/db";
 
-// GET /api/readings?limit=20
-// Returns the latest N readings for every sensor
+// GET /api/readings?limit=20&hours=1
+// Returns the latest N readings for every sensor within the time window
 export async function GET(req: Request) {
   const { searchParams } = new URL(req.url);
-  const limit = Math.min(parseInt(searchParams.get("limit") ?? "20"), 100);
+  const limit = Math.min(parseInt(searchParams.get("limit") ?? "20"), 200);
+  const hours = parseFloat(searchParams.get("hours") ?? "0");
+  const windowMs = hours > 0 ? hours * 3_600_000 : 5 * 60_000; // 5 min default
+  const cutoff = new Date(Date.now() - windowMs).toISOString();
 
   await initDB();
 
   const rows = await sql`
     SELECT sensor_id, value, unit, status, recorded_at
     FROM sensor_readings
-    WHERE recorded_at > NOW() - INTERVAL '10 minutes'
+    WHERE recorded_at > ${cutoff}::timestamptz
     ORDER BY recorded_at DESC
     LIMIT ${limit * 3}
   `;
