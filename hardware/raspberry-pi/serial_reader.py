@@ -187,12 +187,6 @@ def _auto_detect_port() -> str:
     else:
         log.warning("No USB serial ports found — is Arduino plugged in?")
 
-    # Fallback: if /dev/ttyS0 exists and nothing else, try it (UART connection)
-    import os as _os
-    if _os.path.exists("/dev/ttyS0"):
-        log.info("Trying fallback to Pi UART /dev/ttyS0")
-        return "/dev/ttyS0"
-
     raise RuntimeError(
         "No Arduino serial port found. "
         "Set SERIAL_PORT env var or check USB connection."
