@@ -10,8 +10,8 @@ Wires the individual modules together:
 Hardware wiring
 ───────────────
   Arduino USB   → Raspberry Pi USB  (auto-detected, or set SERIAL_PORT)
-  Relay1 IN     → GPIO 17 (BCM)
-  Relay2 IN     → GPIO 27 (BCM)
+  Relay1 (gate) IN → GPIO 13 (BCM)
+  Relay2 (fan)  IN → GPIO 27 (BCM)
   Buzzer +      → GPIO 18 (BCM)
   Relay/Buzzer GND → Pi GND
   Relay/Buzzer VCC → Pi 5 V
