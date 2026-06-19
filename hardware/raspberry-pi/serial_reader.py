@@ -43,25 +43,43 @@ class SerialReader:
 
     # ── Lifecycle ──────────────────────────────────────────────────────────────
     def open(self) -> None:
-        port = self._port or _auto_detect_port()
+        """Open serial port. Tries specified port first, falls back to auto-detect."""
+        ports: list[str] = []
+        if self._port:
+            ports.append(self._port)
+        # Always try auto-detect as fallback (port name can change after restart)
+        try:
+            detected = _auto_detect_port()
+            if detected not in ports:
+                ports.append(detected)
+        except RuntimeError:
+            pass
+
+        last_err = None
+        for port in ports:
+            try:
+                self._open_port(port)
+                return
+            except (serial.SerialException, OSError) as exc:
+                last_err = exc
+                log.warning("Serial open failed on %s: %s", port, exc)
+
+        raise RuntimeError(f"Cannot open any serial port: {last_err}")
+
+    def _open_port(self, port: str) -> None:
         log.info("Opening serial port %s @ %d baud", port, self._baud)
         self._ser = serial.Serial()
         self._ser.port = port
         self._ser.baudrate = self._baud
         self._ser.timeout = 3
-        try:
-            # Toggle DTR briefly to reset the Arduino on (re)connect
-            self._ser.dtr = True
-            self._ser.rts = False
-            self._ser.open()
-            time.sleep(0.1)
-            self._ser.dtr = False
-            time.sleep(2)
-            self._ser.reset_input_buffer()
-        except (serial.SerialException, OSError) as exc:
-            log.warning("Serial open failed: %s", exc)
-            self._ser = None
-            raise
+        # Toggle DTR briefly to reset the Arduino on (re)connect
+        self._ser.dtr = True
+        self._ser.rts = False
+        self._ser.open()
+        time.sleep(0.1)
+        self._ser.dtr = False
+        time.sleep(2)
+        self._ser.reset_input_buffer()
         log.info("Serial port open")
 
     def close(self) -> None:
@@ -151,6 +169,7 @@ class SerialReader:
 # ── Internal helpers ───────────────────────────────────────────────────────────
 def _auto_detect_port() -> str:
     candidates = serial.tools.list_ports.comports()
+    all_devs = [(p.device, p.description or "") for p in candidates]
 
     for p in candidates:
         desc = (p.description or "").lower()
@@ -162,6 +181,17 @@ def _auto_detect_port() -> str:
         if "usb" in (p.device or "").lower():
             log.warning("Falling back to USB port %s", p.device)
             return p.device
+
+    if all_devs:
+        log.warning("No Arduino found. Available: %s", ", ".join(d for d, _ in all_devs))
+    else:
+        log.warning("No USB serial ports found — is Arduino plugged in?")
+
+    # Fallback: if /dev/ttyS0 exists and nothing else, try it (UART connection)
+    import os as _os
+    if _os.path.exists("/dev/ttyS0"):
+        log.info("Trying fallback to Pi UART /dev/ttyS0")
+        return "/dev/ttyS0"
 
     raise RuntimeError(
         "No Arduino serial port found. "
