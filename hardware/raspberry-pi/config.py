@@ -41,3 +41,16 @@ RELAY_POLL_INTERVAL_S:       int = int(os.environ.get("RELAY_POLL_INTERVAL",    
 # ── HTTP client ────────────────────────────────────────────────────────────────
 INGEST_RETRIES:    int   = 5
 INGEST_TIMEOUT_S:  float = 5.0
+
+# ── MQTT ───────────────────────────────────────────────────────────────────────
+MQTT_HOST:     str  = os.environ.get("MQTT_HOST",     "capybara.lmq.cloudamqp.com")
+MQTT_PORT:     int  = int(os.environ.get("MQTT_PORT", "8883"))
+MQTT_USER:     str  = os.environ.get("MQTT_USER",     "jmbgndfy:jmbgndfy")
+MQTT_PASS:     str  = os.environ.get("MQTT_PASS",     "")
+MQTT_CLIENT_ID: str = os.environ.get("MQTT_CLIENT_ID", "gas-agent-pi")
+MQTT_WS_PORT:  int  = int(os.environ.get("MQTT_WS_PORT", "443"))   # WebSocket for browser
+
+# Topics
+MQTT_TOPIC_READINGS:   str = os.environ.get("MQTT_TOPIC_READINGS",   "sensors/reading")
+MQTT_TOPIC_RELAY_CMD:  str = os.environ.get("MQTT_TOPIC_RELAY_CMD",  "relay/command")
+MQTT_TOPIC_RELAY_STATE: str = os.environ.get("MQTT_TOPIC_RELAY_STATE", "relay/state")

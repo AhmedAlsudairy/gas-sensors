@@ -3,8 +3,9 @@
 agent.py — Orchestrator (entry point).
 
 Wires the individual modules together:
-  SerialReader → ThresholdService → GPIOController + IngestClient
+  SerialReader → ThresholdService → GPIOController + IngestClient + MqttClient
   ThresholdFetcher (background) → ThresholdService
+  MQTT relay commands replace HTTP relay polling.
 
 Hardware wiring
 ───────────────
@@ -29,7 +30,7 @@ import config
 from db_cleanup import DbCleanup
 from gpio_controller import GPIOController
 from ingest_client import IngestClient
-from relay_poller import RelayPoller
+from mqtt_client import MqttClient
 from serial_reader import SerialReader
 from threshold_fetcher import ThresholdFetcher
 from threshold_service import SensorReading, ThresholdService
@@ -76,12 +77,17 @@ def run() -> None:
         manual_relay1 = r1
         manual_relay2 = r2
 
-    relay_poller = RelayPoller(
-        dashboard_url=config.DASHBOARD_URL,
-        secret=config.INGEST_SECRET,
-        interval_s=config.RELAY_POLL_INTERVAL_S,
-        on_relay=set_manual_relay,
+    mqtt = MqttClient(
+        host=config.MQTT_HOST,
+        port=config.MQTT_PORT,
+        username=config.MQTT_USER,
+        password=config.MQTT_PASS,
+        client_id=config.MQTT_CLIENT_ID,
+        topic_readings=config.MQTT_TOPIC_READINGS,
+        topic_relay_cmd=config.MQTT_TOPIC_RELAY_CMD,
+        topic_relay_state=config.MQTT_TOPIC_RELAY_STATE,
     )
+    mqtt.set_relay_callback(set_manual_relay)
 
     cleanup = DbCleanup(
         dashboard_url=config.DASHBOARD_URL,
@@ -89,8 +95,8 @@ def run() -> None:
     )
 
     gpio.setup()
+    mqtt.start()
     fetcher.start()
-    relay_poller.start()
     cleanup.start()
 
     while True:
@@ -135,6 +141,24 @@ def run() -> None:
                     result.alarm_reason or "—",
                 )
 
+                # Publish real-time via MQTT
+                mqtt.publish_reading({
+                    "mq2": raw.get("mq2", 0),
+                    "mq136": raw.get("mq136", 0),
+                    "mq7": raw.get("mq7", 0),
+                    "water_level": raw.get("water_level", 0),
+                    "temp_c": raw.get("temp_c", 0),
+                    "water_level_adc": raw.get("water_level_adc", 0),
+                    "alarm_active": result.alarm_active,
+                    "alarm_reason": result.alarm_reason or "",
+                })
+                mqtt.publish_relay_state(
+                    relay1=r1_on,
+                    relay2=r2_on,
+                    reason=result.alarm_reason,
+                )
+
+                # Keep HTTP ingest for DB history storage
                 client.post(
                     readings=readings,
                     relay=result.alarm_active,
@@ -154,9 +178,9 @@ def run() -> None:
             continue
         break  # normal exit (shouldn't happen)
 
+    mqtt.stop()
     cleanup.stop()
     fetcher.stop()
-    relay_poller.stop()
     gpio.cleanup()
     reader.close()
     log.info("Agent stopped")
@@ -164,4 +188,3 @@ def run() -> None:
 
 if __name__ == "__main__":
     run()
-

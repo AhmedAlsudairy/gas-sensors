@@ -1,7 +1,8 @@
 ﻿"use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useCallback } from "react";
 import dynamic from "next/dynamic";
+import mqtt from "mqtt";
 
 const Gauge3D = dynamic(
   () => import("../components/gauge-3d").then((m) => ({ default: m.Gauge3D })),
@@ -466,6 +467,7 @@ export default function Home() {
   const [readings, setReadings] = useState<Record<string, SensorReading>>({});
   const [histories, setHistories] = useState<Record<string, HistoryRow[]>>({});
   const [waterLevelAdc, setWaterLevelAdc] = useState<number | null>(null);
+  const mqttRef = useRef<mqtt.MqttClient | null>(null);
   const [relay1, setRelay1] = useState<boolean | null>(null);
   const [relay2, setRelay2] = useState<boolean | null>(null);
   const [alarmActive, setAlarmActive] = useState(false);
@@ -473,6 +475,10 @@ export default function Home() {
   const relayMode = relay1 === null && relay2 === null ? "auto" : "manual";
   const actualR1 = relay1 !== null ? relay1 : alarmActive;
   const actualR2 = relay2 !== null ? relay2 : alarmActive;
+
+  const mqttPub = useCallback((topic: string, payload: object) => {
+    mqttRef.current?.publish(topic, JSON.stringify(payload), { qos: 0 });
+  }, []);
   const [tick, setTick] = useState(0);
   const [thresholds, setThresholds] = useState<Record<string, { warn: number; danger: number }>>(() =>
     Object.fromEntries(SENSORS.map((s) => [s.id, { ...s.thresholds }]))
@@ -488,13 +494,6 @@ export default function Home() {
           t[row.sensor_id] = { warn: row.warn, danger: row.danger };
         }
         if (Object.keys(t).length > 0) setThresholds((prev) => ({ ...prev, ...t }));
-      })
-      .catch(() => {});
-    fetch("/api/relay")
-      .then((r) => r.json())
-      .then((data) => {
-        setRelay1(data.relay1 ?? null);
-        setRelay2(data.relay2 ?? null);
       })
       .catch(() => {});
   }, []);
@@ -529,36 +528,43 @@ export default function Home() {
   }, []);
 
   useEffect(() => {
-    let es: EventSource | null = null;
-    let reconnect: ReturnType<typeof setTimeout>;
+    const mqttUrl = process.env.NEXT_PUBLIC_MQTT_URL ?? "wss://capybara.lmq.cloudamqp.com:443/mqtt";
+    const mqttUser = process.env.NEXT_PUBLIC_MQTT_USER ?? "jmbgndfy:jmbgndfy";
+    const mqttPass = process.env.NEXT_PUBLIC_MQTT_PASS ?? "b01OZHbKwdNMMenpt1vwzothZwhpngFe";
+    const client = mqtt.connect(mqttUrl, {
+      username: mqttUser,
+      password: mqttPass,
+      clientId: "gas-dashboard-" + Math.random().toString(36).slice(2, 8),
+      reconnectPeriod: 3000,
+      clean: true,
+    });
+    mqttRef.current = client;
 
-    const connect = () => {
-      es = new EventSource("/api/sse");
+    client.on("connect", () => {
+      setIsLive(true);
+      client.subscribe(["sensors/reading", "relay/state"], { qos: 0 });
+    });
 
-      es.addEventListener("message", (e) => {
-        try {
-          const msg = JSON.parse(e.data) as {
-            type: string;
-            data: Record<string, { value: number; unit: string; status: string; recorded_at: string }>;
-            relay?: { active: boolean; reason: string | null };
-          };
-          if (msg.type !== "readings") return;
-          const hasData = Object.keys(msg.data).length > 0;
-          if (!hasData) return;
+    client.on("message", (topic: string, payload: Buffer) => {
+      try {
+        const msg = JSON.parse(payload.toString());
+        const now = new Date().toISOString();
+        setLastSeen(new Date().toLocaleTimeString());
 
-          setIsLive(true);
-          setLastSeen(new Date().toLocaleTimeString());
+        if (topic === "sensors/reading") {
+          setAlarmActive(msg.alarm_active === true);
+          if (msg.alarm_reason) setRelayReason(msg.alarm_reason);
 
           setReadings((prev) => {
             const next = { ...prev };
             for (const sensor of SENSORS) {
-              const incoming = msg.data[sensor.id];
-              if (!incoming) continue;
+              const value = msg[sensor.id];
+              if (value === undefined) continue;
               const old = prev[sensor.id];
               next[sensor.id] = {
-                value: incoming.value,
-                history: old ? [...old.history.slice(-19), incoming.value] : [incoming.value],
-                recorded_at: incoming.recorded_at,
+                value,
+                history: old ? [...old.history.slice(-19), value] : [value],
+                recorded_at: now,
               };
             }
             return next;
@@ -567,38 +573,34 @@ export default function Home() {
           setHistories((prev) => {
             const next = { ...prev };
             for (const sensor of SENSORS) {
-              const incoming = msg.data[sensor.id];
-              if (!incoming) continue;
+              const value = msg[sensor.id];
+              if (value === undefined) continue;
               const old = next[sensor.id] || [];
-              next[sensor.id] = [...old, { value: incoming.value, recorded_at: incoming.recorded_at }].slice(-50);
+              next[sensor.id] = [...old, { value, recorded_at: now }].slice(-50);
             }
             return next;
           });
 
-          const wla = msg.data["water_level_adc"];
-          if (wla) setWaterLevelAdc(wla.value);
-
-          if (msg.relay) {
-            setAlarmActive(msg.relay.active);
-            setRelayReason(msg.relay.reason ?? null);
-          }
-          setTick((t) => t + 1);
-        } catch {
-          // malformed event
+          if (msg.water_level_adc !== undefined) setWaterLevelAdc(msg.water_level_adc);
         }
-      });
 
-      es.onerror = () => {
-        setIsLive(false);
-        es?.close();
-        reconnect = setTimeout(connect, 5000);
-      };
-    };
+        if (topic === "relay/state") {
+          setAlarmActive(msg.relay1 || msg.relay2);
+          // Only update manual relay state from MQTT if not already manually controlled
+          // (the relay/state topic reflects the actual physical state)
+        }
 
-    connect();
+        setTick((t) => t + 1);
+      } catch {
+        // malformed message
+      }
+    });
+
+    client.on("offline", () => setIsLive(false));
+    client.on("error", () => setIsLive(false));
+
     return () => {
-      es?.close();
-      clearTimeout(reconnect);
+      client.end();
     };
   }, []);
 
@@ -687,17 +689,15 @@ export default function Home() {
           </span>
 
           <button
-            onClick={async () => {
+            onClick={() => {
               const toAuto = relayMode === "manual";
-              try {
-                await fetch("/api/relay", {
-                  method: "POST",
-                  headers: { "Content-Type": "application/json" },
-                  body: JSON.stringify({ mode: toAuto ? "auto" : "manual" }),
-                });
-                if (toAuto) { setRelay1(null); setRelay2(null); }
-                else { setRelay1(true); setRelay2(true); }
-              } catch {}
+              if (toAuto) {
+                setRelay1(null); setRelay2(null);
+                mqttPub("relay/command", { relay1: null, relay2: null });
+              } else {
+                setRelay1(true); setRelay2(true);
+                mqttPub("relay/command", { relay1: true, relay2: true });
+              }
             }}
             className="flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[10px] font-bold transition-all hover:scale-105 active:scale-95"
             style={{
@@ -725,17 +725,11 @@ export default function Home() {
             return (
               <button
                 key={n}
-                onClick={async () => {
+                onClick={() => {
                   const key = `relay${n}` as "relay1" | "relay2";
                   const next = manual === true ? false : manual === false ? null : true;
-                  try {
-                    await fetch("/api/relay", {
-                      method: "POST",
-                      headers: { "Content-Type": "application/json" },
-                      body: JSON.stringify({ [key]: next }),
-                    });
-                    setManual(next);
-                  } catch {}
+                  setManual(next);
+                  mqttPub("relay/command", { [key]: next });
                 }}
                 className="flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[10px] font-bold transition-all hover:scale-105 active:scale-95"
                 style={{
